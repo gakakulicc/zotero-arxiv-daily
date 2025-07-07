@@ -160,5 +160,10 @@ def send_email(sender:str, receiver:str, password:str,smtp_server:str,smtp_port:
         server = smtplib.SMTP_SSL(smtp_server, smtp_port)
 
     server.login(sender, password)
-    server.sendmail(sender, [receiver], msg.as_string())
+  
+    receiver_list = [email.strip() for email in receiver.split(',')]
+    for email in receiver_list:
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            raise ValueError(f"无效邮箱: {email}")
+    server.sendmail(sender, receiver_list, msg.as_string())
     server.quit()
