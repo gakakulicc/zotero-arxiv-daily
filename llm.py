@@ -13,7 +13,7 @@ class LLM:
             self.llm = Llama.from_pretrained(
                 repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
                 filename="qwen2.5-3b-instruct-q4_k_m.gguf",
-                n_ctx=5_000,
+                n_ctx=8192,
                 n_threads=4,
                 verbose=False,
             )
@@ -34,7 +34,7 @@ class LLM:
                     sleep(3)
             return response.choices[0].message.content
         else:
-            response = self.llm.create_chat_completion(messages=messages,temperature=0)
+            response = self.llm.create_chat_completion(messages=messages,temperature=0,max_tokens=512)
             return response["choices"][0]["message"]["content"]
 
 def set_global_llm(api_key: str = None, base_url: str = None, model: str = None, lang: str = "English"):
