@@ -68,14 +68,24 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
     if not debug:
         papers = []
         all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if i.arxiv_announce_type == 'new']
-        bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
-        for i in range(0,len(all_paper_ids),20):
+        bar = tqdm(total=len(all_paper_ids), desc="Retrieving Arxiv papers")
+        for i in range(0, len(all_paper_ids), 20):
             search = arxiv.Search(id_list=all_paper_ids[i:i+20])
-            batch = [ArxivPaper(p) for p in client.results(search)]
+            for attempt in range(3):  # 最多重试3次
+                try:
+                    batch = [ArxivPaper(p) for p in client.results(search)]
+                    break
+                except arxiv.HTTPError as e:
+                    if e.status == 429:
+                        wait = 60 * (attempt + 1)  # 60s, 120s, 180s
+                        logger.warning(f"Rate limited, waiting {wait}s... (attempt {attempt+1}/3)")
+                        time.sleep(wait)
+                    else:
+                        raise
             bar.update(len(batch))
             papers.extend(batch)
+            time.sleep(5)  # 每批次之间等待5秒
         bar.close()
-
     else:
         logger.debug("Retrieve 5 arxiv papers regardless of the date.")
         search = arxiv.Search(query='cat:cs.AI', sort_by=arxiv.SortCriterion.SubmittedDate)
