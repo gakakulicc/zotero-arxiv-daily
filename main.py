@@ -15,6 +15,7 @@ arxiv.Result._get_pdf_url = _get_pdf_url_patch
 
 import argparse
 import os
+import time
 import sys
 from dotenv import load_dotenv
 load_dotenv(override=True)
