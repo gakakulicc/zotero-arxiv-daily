@@ -4,7 +4,19 @@ from paper import ArxivPaper
 from datetime import datetime
 
 def rerank_paper(candidate:list[ArxivPaper],corpus:list[dict],model:str='avsolatorio/GIST-small-Embedding-v0') -> list[ArxivPaper]:
-    encoder = SentenceTransformer(model)
+    for attempt in range(3):
+        try:
+            encoder = SentenceTransformer(model)
+            break
+        except Exception as e:
+            if attempt < 2:
+                wait = 30 * (attempt + 1)  # 30s, 60s
+                logger.warning(f"Failed to load model (attempt {attempt+1}/3), retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise RuntimeError(f"Failed to load model after 3 attempts: {e}") from e
+
+    # encoder = SentenceTransformer(model)
     #sort corpus by date, from newest to oldest
     corpus = sorted(corpus,key=lambda x: datetime.strptime(x['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'),reverse=True)
     time_decay_weight = 1 / (1 + np.log10(np.arange(len(corpus)) + 1))
