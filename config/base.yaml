@@ -23,6 +23,15 @@ email:
   sender_password: ??? # The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this. Example: abcdefghijklmn
 
 llm:
+  backend: api # 'local' for direct GGUF inference; 'api' for an OpenAI-compatible endpoint.
+  local:
+    model_path: null # Optional existing GGUF file. Otherwise downloaded from Hugging Face.
+    repo_id: Qwen/Qwen2.5-3B-Instruct-GGUF
+    filename: qwen2.5-3b-instruct-q4_k_m.gguf
+    n_ctx: 8192
+    n_threads: 4
+    max_tokens: 512
+    temperature: 0
   api:
     key: ??? # API Key of your LLM API. Example: sk-xxx
     base_url: ??? # API URL of your LLM API. Example: https://api.openai.com/v1

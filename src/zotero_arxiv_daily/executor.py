@@ -10,6 +10,7 @@ from .reranker import get_reranker_cls
 from .construct_email import render_email
 from .utils import send_email
 from openai import OpenAI
+from .local_llm import LocalLLM
 from tqdm import tqdm
 
 
@@ -38,7 +39,13 @@ class Executor:
             source: get_retriever_cls(source)(config) for source in config.executor.source
         }
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
-        self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)
+        backend = config.llm.get("backend", "api")
+        if backend == "local":
+            self.openai_client = LocalLLM(config.llm.local)
+        elif backend == "api":
+            self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)
+        else:
+            raise ValueError(f"Unsupported llm.backend: {backend}. Expected 'local' or 'api'.")
     def fetch_zotero_corpus(self) -> list[CorpusPaper]:
         logger.info("Fetching zotero corpus")
         zot = zotero.Zotero(self.config.zotero.user_id, 'user', self.config.zotero.api_key)

@@ -4,12 +4,15 @@ from datetime import datetime
 import re
 import tiktoken
 from openai import OpenAI
+from .local_llm import LocalLLM
 from loguru import logger
 import json
 RawPaperItem = TypeVar('RawPaperItem')
 
 
-def _request_llm(openai_client: OpenAI, llm_params: dict, messages: list[dict]) -> str:
+def _request_llm(openai_client: OpenAI | LocalLLM, llm_params: dict, messages: list[dict]) -> str:
+    if llm_params.get("backend", "api") == "local":
+        return openai_client.generate(messages)
     api_mode = llm_params.get("api_mode", "chat_completion")
     generation_kwargs = dict(llm_params.get("generation_kwargs", {}))
 
@@ -36,6 +39,13 @@ def _request_llm(openai_client: OpenAI, llm_params: dict, messages: list[dict]) 
     )
 
 
+def _truncate_prompt(client: OpenAI | LocalLLM, llm_params: dict, prompt: str, limit: int) -> str:
+    if llm_params.get("backend", "api") == "local":
+        return client.truncate_prompt(prompt, limit)
+    enc = tiktoken.encoding_for_model("gpt-4o")
+    return enc.decode(enc.encode(prompt)[:limit])
+
+
 @dataclass
 class Paper:
     source: str
@@ -49,7 +59,7 @@ class Paper:
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
 
-    def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
+    def _generate_tldr_with_llm(self, openai_client:OpenAI | LocalLLM,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')
         prompt = f"Given the following information of a paper, generate a one-sentence TLDR summary in {lang}:\n\n"
         if self.title:
@@ -65,11 +75,7 @@ class Paper:
             logger.warning(f"Neither full text nor abstract is provided for {self.url}")
             return "Failed to generate TLDR. Neither full text nor abstract is provided"
         
-        # use gpt-4o tokenizer for estimation
-        enc = tiktoken.encoding_for_model("gpt-4o")
-        prompt_tokens = enc.encode(prompt)
-        prompt_tokens = prompt_tokens[:4000]  # truncate to 4000 tokens
-        prompt = enc.decode(prompt_tokens)
+        prompt = _truncate_prompt(openai_client, llm_params, prompt, 4000)
         
         tldr = _request_llm(
             openai_client,
@@ -84,7 +90,7 @@ class Paper:
         )
         return tldr
     
-    def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
+    def generate_tldr(self, openai_client:OpenAI | LocalLLM,llm_params:dict) -> str:
         try:
             tldr = self._generate_tldr_with_llm(openai_client,llm_params)
             self.tldr = tldr
@@ -95,14 +101,10 @@ class Paper:
             self.tldr = tldr
             return tldr
 
-    def _generate_affiliations_with_llm(self, openai_client:OpenAI,llm_params:dict) -> Optional[list[str]]:
+    def _generate_affiliations_with_llm(self, openai_client:OpenAI | LocalLLM,llm_params:dict) -> Optional[list[str]]:
         if self.full_text is not None:
             prompt = f"Given the beginning of a paper, extract the affiliations of the authors in a python list format, which is sorted by the author order. If there is no affiliation found, return an empty list '[]':\n\n{self.full_text}"
-            # use gpt-4o tokenizer for estimation
-            enc = tiktoken.encoding_for_model("gpt-4o")
-            prompt_tokens = enc.encode(prompt)
-            prompt_tokens = prompt_tokens[:2000]  # truncate to 2000 tokens
-            prompt = enc.decode(prompt_tokens)
+            prompt = _truncate_prompt(openai_client, llm_params, prompt, 2000)
             affiliations = _request_llm(
                 openai_client,
                 llm_params,
@@ -122,7 +124,7 @@ class Paper:
 
             return affiliations
     
-    def generate_affiliations(self, openai_client:OpenAI,llm_params:dict) -> Optional[list[str]]:
+    def generate_affiliations(self, openai_client:OpenAI | LocalLLM,llm_params:dict) -> Optional[list[str]]:
         try:
             affiliations = self._generate_affiliations_with_llm(openai_client,llm_params)
             self.affiliations = affiliations

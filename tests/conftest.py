@@ -34,6 +34,7 @@ def _base_config():
                 "email.smtp_port=1025",
                 "email.sender_password=test",
                 "llm.api.key=sk-fake",
+                "llm.backend=api",
                 "llm.api.base_url=http://localhost:30000/v1",
                 "llm.generation_kwargs.model=gpt-4o-mini",
                 "reranker.api.key=sk-fake",
@@ -56,3 +57,36 @@ def config(_base_config):
     Safe to mutate inside any test without polluting other tests.
     """
     return copy.deepcopy(_base_config)
+
+
+@pytest.fixture()
+def stub_local_llm(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    state = SimpleNamespace(loads=[], downloads=[], requests=[])
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            state.loads.append(kwargs)
+
+        @classmethod
+        def from_pretrained(cls, **kwargs):
+            state.downloads.append(kwargs)
+            return cls(**kwargs)
+
+        def tokenize(self, text, **kwargs):
+            return list(text)
+
+        def detokenize(self, tokens):
+            return bytes(tokens)
+
+        def create_chat_completion(self, **kwargs):
+            state.requests.append(kwargs)
+            content = ('["TsingHua University", "Peking University"]'
+                       if "affiliations" in kwargs["messages"][0]["content"]
+                       else "Local summary")
+            return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    return state

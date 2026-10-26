@@ -50,6 +50,65 @@
 ![screenshot](./assets/screenshot.png)
 
 ## 🚀 Usage
+
+### Local LLM or API (this fork)
+
+This fork supports both **direct local GGUF inference** and an **OpenAI-compatible API**.
+An online or paid LLM API is **not required** in local mode. The upstream version merged
+into this fork had removed direct `llama_cpp` inference; this fork restores it.
+
+The checked-in `config/custom.yaml` defaults to `llm.backend: local`. Install and run:
+
+```bash
+uv sync --extra local-llm
+uv run --extra local-llm src/zotero_arxiv_daily/main.py
+```
+
+The original model and custom limits are preserved:
+
+```yaml
+llm:
+  backend: local
+  language: English # Change to Chinese if desired.
+  local:
+    model_path: null
+    repo_id: Qwen/Qwen2.5-3B-Instruct-GGUF
+    filename: qwen2.5-3b-instruct-q4_k_m.gguf
+    n_ctx: 8192
+    n_threads: 4
+    max_tokens: 512
+    temperature: 0
+```
+
+These settings supplement your existing Zotero, email, and source configuration.
+The model is downloaded from Hugging Face on first use and cached. To use an existing
+GGUF without a model download, set `llm.local.model_path` to its file path. Local
+inference uses the model's own tokenizer and does not need `OPENAI_API_KEY` or
+`OPENAI_API_BASE`. Zotero and email still require their normal credentials and network
+access. The separate embedding reranker defaults to local inference as well; choosing
+the API reranker requires its own API settings.
+
+`llama-cpp-python` may need a C/C++ compiler when a prebuilt wheel is unavailable.
+See its [installation instructions](https://github.com/abetlen/llama-cpp-python#installation).
+The normal test suite uses model stubs, without downloading GGUF weights.
+
+To use an LLM API instead, set `llm.backend: api` in your custom YAML or run:
+
+```bash
+uv run src/zotero_arxiv_daily/main.py llm.backend=api
+```
+
+Configure `llm.api.key`, `llm.api.base_url`, and `llm.generation_kwargs.model` for
+your provider (or a local API server). `llm.api_mode` selects `chat_completion` or
+`response`; it is ignored for direct local inference. The `llm.local.max_tokens`
+setting is independent of the API's `llm.generation_kwargs.max_tokens`.
+
+The daily Action installs the `local-llm` extra. If the repository variable
+`CUSTOM_CONFIG` is empty, it keeps the checked-in configuration. If it contains YAML,
+that YAML replaces `config/custom.yaml`: include `llm.backend: local` to use direct
+local inference, or `llm.backend: api` for the API. Do not put credentials in a public
+repository variable; reference GitHub Secrets through environment variables.
+
 ### Quick Start
 1. Fork (and star😘) this repo.
 ![fork](./assets/fork.png)
@@ -66,8 +125,8 @@ Below are all the secrets you need to set. They are invisible to anyone includin
 | SENDER | The email account of the SMTP server that sends you email. | abc@qq.com |
 | SENDER_PASSWORD | The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this.   | abcdefghijklmn |
 | RECEIVER | The e-mail address that receives the paper list. | abc@outlook.com |
-| OPENAI_API_KEY | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
-| OPENAI_API_BASE | API URL when using the API to access LLMs. | https://api.siliconflow.cn/v1 |
+| OPENAI_API_KEY | Required only when `llm.backend: api`; unused by direct local LLM inference. | sk-xxx |
+| OPENAI_API_BASE | Provider URL for `llm.backend: api`; unused by direct local LLM inference. | https://api.siliconflow.cn/v1 |
 
 Then you should also set a public variable `CUSTOM_CONFIG` for your custom configuration.
 ![vars](./assets/repo_var.png)

@@ -148,7 +148,8 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_run_end_to_end(config, monkeypatch):
+@pytest.mark.parametrize("backend", ["api", "local"])
+def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm):
     """Full pipeline: Zotero fetch -> filter -> retrieve -> rerank -> TLDR -> email."""
     import smtplib
 
@@ -167,6 +168,9 @@ def test_run_end_to_end(config, monkeypatch):
         config.executor.source = ["arxiv"]
         config.executor.reranker = "api"
         config.executor.send_empty = False
+        config.llm.backend = backend
+        if backend == "local":
+            del config.llm.api  # Local inference must work without any LLM API settings.
 
     # 1. Stub pyzotero
     stub_zot = make_stub_zotero_client()
@@ -174,7 +178,11 @@ def test_run_end_to_end(config, monkeypatch):
 
     # 2. Stub OpenAI (for reranker + TLDR/affiliations)
     stub_client = make_stub_openai_client()
-    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", lambda **kw: stub_client)
+    def create_llm_api_client(**kwargs):
+        assert backend == "api", "Local LLM must not create an API client"
+        return stub_client
+
+    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", create_llm_api_client)
     monkeypatch.setattr("zotero_arxiv_daily.reranker.api.OpenAI", lambda **kw: stub_client)
     retrieved = [
         make_sample_paper(title="E2E Paper 1", score=None),
@@ -207,6 +215,9 @@ def test_run_end_to_end(config, monkeypatch):
     assert len(sent) == 1, "Email should have been sent"
     _, _, email_body = sent[0]
     assert "text/html" in email_body
+    if backend == "local":
+        assert len(stub_local_llm.loads) == 1
+        assert len(stub_local_llm.requests) == 4
 
 
 def test_run_no_papers_send_empty_false(config, monkeypatch):
