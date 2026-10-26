@@ -52,6 +52,7 @@ def test_normalize_path_patterns_accepts_none():
 
 def _make_executor(include_patterns=None, ignore_patterns=None):
     executor = Executor.__new__(Executor)
+    executor.config = OmegaConf.create({"zotero": {"legacy_ignore_patterns": None}})
     executor.include_path_patterns = normalize_path_patterns(include_patterns, "include_path") if include_patterns else None
     executor.ignore_path_patterns = normalize_path_patterns(ignore_patterns, "ignore_path") if ignore_patterns else None
     return executor
@@ -149,7 +150,8 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
 
 
 @pytest.mark.parametrize("backend", ["api", "local"])
-def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm):
+@pytest.mark.parametrize("paper_limit", [1, -1])
+def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limit):
     """Full pipeline: Zotero fetch -> filter -> retrieve -> rerank -> TLDR -> email."""
     import smtplib
 
@@ -168,6 +170,7 @@ def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm):
         config.executor.source = ["arxiv"]
         config.executor.reranker = "api"
         config.executor.send_empty = False
+        config.executor.max_paper_num = paper_limit
         config.llm.backend = backend
         if backend == "local":
             del config.llm.api  # Local inference must work without any LLM API settings.
@@ -215,9 +218,11 @@ def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm):
     assert len(sent) == 1, "Email should have been sent"
     _, _, email_body = sent[0]
     assert "text/html" in email_body
+    expected_count = 1 if paper_limit == 1 else 2
+    assert sum(paper.tldr is not None for paper in retrieved) == expected_count
     if backend == "local":
         assert len(stub_local_llm.loads) == 1
-        assert len(stub_local_llm.requests) == 4
+        assert len(stub_local_llm.requests) == 2 * expected_count
 
 
 def test_run_no_papers_send_empty_false(config, monkeypatch):

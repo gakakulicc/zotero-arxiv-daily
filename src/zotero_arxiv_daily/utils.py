@@ -139,16 +139,33 @@ def glob_match(path:str, pattern:str) -> bool:
     re_pattern = glob.translate(pattern,recursive=True)
     return re.match(re_pattern, path) is not None
 
+def parse_receivers(receiver: str) -> list[str]:
+    """Accept comma/semicolon/newline-separated bare addresses, never SMTP control characters."""
+    if not isinstance(receiver, str):
+        raise ValueError("RECEIVER must be a string of email addresses")
+    receivers = []
+    for part in re.split(r'[,;，；\r\n]+', receiver):
+        address = part.strip()
+        if not address:
+            continue
+        if (any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in address)
+                or not re.fullmatch(r'[^@<>(),;:"\\]+@[^@<>(),;:"\\]+\.[^@<>(),;:"\\]+', address)):
+            # Do not echo addresses from GitHub Secrets into public logs.
+            raise ValueError("RECEIVER contains an invalid email address; use bare addresses separated by commas or newlines")
+        if address not in receivers:
+            receivers.append(address)
+    if not receivers:
+        raise ValueError("RECEIVER must contain at least one email address")
+    return receivers
+
+
 def send_email(config:DictConfig, html:str):
     sender = config.email.sender
     receiver = config.email.receiver
     password = config.email.sender_password
     smtp_server = config.email.smtp_server
     smtp_port = config.email.smtp_port
-    receiver_list = [email.strip() for email in receiver.split(',')]
-    for email in receiver_list:
-        if '@' not in email or '.' not in email.split('@')[-1]:
-            raise ValueError(f"无效邮箱: {email}")
+    receiver_list = parse_receivers(receiver)
     def _format_addr(s):
         name, addr = parseaddr(s)
         return formataddr((Header(name, 'utf-8').encode(), addr))
@@ -159,17 +176,22 @@ def send_email(config:DictConfig, html:str):
     today = datetime.datetime.now().strftime('%Y/%m/%d')
     msg['Subject'] = Header(f'Daily arXiv {today}', 'utf-8').encode()
 
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-    except Exception as e:
-        logger.debug(f"Failed to use TLS. {e}\nTry to use SSL.")
+    if smtp_port == 465:
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+    else:
         try:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port)
-        except Exception as e:
-            logger.debug(f"Failed to use SSL. {e}\nTry to use plain text.")
             server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()
+        except Exception as e:
+            logger.debug(f"Failed to use TLS. {e}\nTry to use SSL.")
+            try:
+                server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+            except Exception as e:
+                logger.debug(f"Failed to use SSL. {e}\nTry to use plain text.")
+                server = smtplib.SMTP(smtp_server, smtp_port)
 
-    server.login(sender, password)
-    server.sendmail(sender, receiver_list, msg.as_string())
-    server.quit()
+    try:
+        server.login(sender, password)
+        server.sendmail(sender, receiver_list, msg.as_string())
+    finally:
+        server.quit()

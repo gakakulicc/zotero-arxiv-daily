@@ -8,7 +8,7 @@ from email.utils import getaddresses
 
 import pytest
 
-from zotero_arxiv_daily.utils import glob_match, send_email, extract_tex_code_from_tar, _bm25_pick
+from zotero_arxiv_daily.utils import glob_match, send_email, extract_tex_code_from_tar, _bm25_pick, parse_receivers
 from tests.canned_responses import make_stub_smtp
 
 
@@ -148,16 +148,55 @@ def test_send_email_multiple_recipients(config, monkeypatch):
     assert [address for _, address in getaddresses(message.get_all("To"))] == recipients
 
 
-@pytest.mark.parametrize("receiver", ["invalid", "ok@example.com, invalid", "ok@example.com,"])
+@pytest.mark.parametrize("receiver", ["invalid", "ok@example.com, invalid", "\r\n", "a@exa\tmple.com", "private@example.com\x00", "\"bad\r\nBcc:other@example.com\"@example.com"])
 def test_send_email_rejects_invalid_recipient_before_connecting(config, monkeypatch, receiver):
     config.email.receiver = receiver
     connections = []
     monkeypatch.setattr(smtplib, "SMTP", lambda *args: connections.append(args))
 
-    with pytest.raises(ValueError, match="无效邮箱"):
+    with pytest.raises(ValueError, match="RECEIVER") as error:
         send_email(config, "<html>hello</html>")
 
     assert connections == []
+    if '@' in receiver:
+        assert receiver not in str(error.value)
+
+
+@pytest.mark.parametrize("receiver", [
+    "first@example.com\nsecond@example.org",
+    "\r\nfirst@example.com\r\nsecond@example.org\r\n",
+    "first@example.com,\nsecond@example.org,",
+    "first@example.com；second@example.org",
+    "first@example.com;second@example.org",
+    "first@example.com，second@example.org",
+])
+def test_send_email_newline_and_other_separators(config, monkeypatch, receiver):
+    config.email.receiver = receiver
+    sent = []
+    smtp_class = smtplib.SMTP
+    monkeypatch.setattr(smtplib, "SMTP", make_stub_smtp(sent))
+    send_email(config, "<html>hello</html>")
+    _, recipients, body = sent[0]
+    assert recipients == ["first@example.com", "second@example.org"]
+    # Exercise smtplib's actual command validation, without a network connection.
+    smtp = smtp_class()
+    smtp.send = lambda command: None
+    for recipient in recipients:
+        smtp.putcmd("rcpt", "TO:" + smtplib.quoteaddr(recipient))
+    assert [address for _, address in getaddresses(message_from_string(body).get_all("To"))] == recipients
+
+
+def test_parse_receivers_deduplicates_and_ignores_empty_separators():
+    assert parse_receivers(" a@example.com,\r\n,a@example.com; ") == ["a@example.com"]
+
+
+def test_send_email_465_uses_ssl_directly(config, monkeypatch):
+    config.email.smtp_port = 465
+    sent = []
+    monkeypatch.setattr(smtplib, "SMTP_SSL", make_stub_smtp(sent))
+    monkeypatch.setattr(smtplib, "SMTP", lambda *args: pytest.fail("465 must connect using SSL"))
+    send_email(config, "<html>ssl</html>")
+    assert len(sent) == 1
 
 
 def test_send_email_falls_back_to_ssl(config, monkeypatch):

@@ -53,6 +53,9 @@
 
 ### Local LLM or API (this fork)
 
+For upgrading an existing fork with old Actions settings, see
+[GitHub Actions setup and compatibility notes](docs/ACTIONS_SETUP.md).
+
 This fork supports both **direct local GGUF inference** and an **OpenAI-compatible API**.
 An online or paid LLM API is **not required** in local mode. The upstream version merged
 into this fork had removed direct `llama_cpp` inference; this fork restores it.

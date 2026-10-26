@@ -8,7 +8,7 @@ import random
 from datetime import datetime
 from .reranker import get_reranker_cls
 from .construct_email import render_email
-from .utils import send_email
+from .utils import send_email, parse_receivers
 from openai import OpenAI
 from .local_llm import LocalLLM
 from tqdm import tqdm
@@ -33,6 +33,7 @@ def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key:
 class Executor:
     def __init__(self, config:DictConfig):
         self.config = config
+        parse_receivers(config.email.receiver)  # Fail before fetching papers or loading models.
         self.include_path_patterns = normalize_path_patterns(config.zotero.include_path, "include_path")
         self.ignore_path_patterns = normalize_path_patterns(config.zotero.ignore_path, "ignore_path")
         self.retrievers = {
@@ -70,6 +71,18 @@ class Executor:
         ) for c in corpus]
     
     def filter_corpus(self, corpus:list[CorpusPaper]) -> list[CorpusPaper]:
+        legacy_patterns = self.config.zotero.get("legacy_ignore_patterns")
+        if legacy_patterns:
+            from gitignore_parser import parse_gitignore
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+            import os
+
+            with TemporaryDirectory() as directory:
+                ignore_file = Path(directory) / "legacy.gitignore"
+                ignore_file.write_text(legacy_patterns, encoding="utf-8")
+                matcher = parse_gitignore(str(ignore_file), base_dir=os.getcwd())
+                corpus = [paper for paper in corpus if not any(matcher(path) for path in paper.paths)]
         if self.include_path_patterns:
             logger.info(f"Selecting zotero papers matching include_path: {self.include_path_patterns}")
             corpus = [
@@ -117,7 +130,8 @@ class Executor:
         if len(all_papers) > 0:
             logger.info("Reranking papers...")
             reranked_papers = self.reranker.rerank(all_papers, corpus)
-            reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
+            if self.config.executor.max_paper_num != -1:
+                reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             logger.info("Generating TLDR and affiliations...")
             for p in tqdm(reranked_papers):
                 p.generate_tldr(self.openai_client, self.config.llm)

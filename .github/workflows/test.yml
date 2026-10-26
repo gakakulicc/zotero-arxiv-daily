@@ -5,15 +5,23 @@ on:
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CMAKE_ARGS: -DGGML_NATIVE=OFF
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      #  with:
-      #    repository: ${{ vars.REPOSITORY }}
-      #    ref: ${{ vars.REF }}
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v7.1.4
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/huggingface/hub
+          key: ${{ runner.os }}-hf-v1-${{ hashFiles('config/base.yaml') }}
+          restore-keys: ${{ runner.os }}-hf-v1-
 
 
       - name: Run script
@@ -25,10 +33,20 @@ jobs:
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          ARXIV_QUERY: ${{ secrets.ARXIV_QUERY }}
+          MAX_PAPER_NUM: ${{ secrets.MAX_PAPER_NUM }}
+          USE_LLM_API: ${{ secrets.USE_LLM_API }}
+          MODEL_NAME: ${{ secrets.MODEL_NAME }}
+          LANGUAGE: ${{ vars.LANGUAGE }}
+          ZOTERO_IGNORE: ${{ vars.ZOTERO_IGNORE }}
+          SEND_EMPTY: ${{ vars.SEND_EMPTY }}
+          LLM_BACKEND: ${{ vars.LLM_BACKEND }}
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
         run: |
           export DEBUG=true
           if [ -n "$CUSTOM_CONFIG" ]; then
             printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
           fi
-          uv run --extra local-llm src/zotero_arxiv_daily/main.py
+          uv run --locked --extra local-llm src/zotero_arxiv_daily/main.py
