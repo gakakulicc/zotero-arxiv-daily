@@ -1,0 +1,5 @@
+repo_id: Qwen/Qwen2.5-3B-Instruct-GGUF
+filename: qwen2.5-3b-instruct-q4_k_m.gguf
+revision: null
+enable_thinking: null
+max_tokens: 512

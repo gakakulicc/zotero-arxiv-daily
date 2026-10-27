@@ -1,0 +1,5 @@
+repo_id: unsloth/Qwen3.5-4B-GGUF
+filename: Qwen3.5-4B-Q5_K_M.gguf
+revision: e87f176479d0855a907a41277aca2f8ee7a09523
+enable_thinking: false
+max_tokens: 768
