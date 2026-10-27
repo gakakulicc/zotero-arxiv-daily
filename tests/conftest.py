@@ -80,6 +80,8 @@ def stub_local_llm(monkeypatch):
             state.templates.append(kwargs)
         def to_chat_handler(self):
             return "test-handler"
+        def __call__(self, **kwargs):
+            return SimpleNamespace(prompt='<|im_start|>assistant\n<think>\n\n</think>\n\n')
 
     class FakeLlama:
         def __init__(self, **kwargs):

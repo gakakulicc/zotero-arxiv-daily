@@ -38,7 +38,7 @@ llm:
   local:
     input_tokens: 4000
     n_ctx: 8192
-    max_tokens: 512
+    max_tokens: 768
 ```
 
 如果显式选择 Jina 等其他模型，请使用该模型需要的编码参数。GIST 不使用 Jina 的

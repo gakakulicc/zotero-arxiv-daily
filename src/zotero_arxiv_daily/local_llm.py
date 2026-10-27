@@ -47,6 +47,10 @@ class LocalLLM:
                 bos_token=model.detokenize([model.token_bos()], special=True).decode("utf-8") if model.token_bos() >= 0 else "",
                 stop_token_ids=[model.token_eos()],
             )
+            probe = formatter(messages=[{"role": "user", "content": "Template check"}]).prompt
+            assistant_prefix = probe.rsplit("<|im_start|>assistant", 1)[-1]
+            if "<think>" in assistant_prefix and "</think>" not in assistant_prefix:
+                raise ValueError("The model chat template did not disable thinking")
             model.chat_handler = formatter.to_chat_handler()
         return model
 

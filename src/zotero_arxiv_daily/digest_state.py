@@ -51,7 +51,7 @@ class DigestState:
         generation = config.llm.get("generation_kwargs") or {}
         if OmegaConf.is_config(generation):
             generation = OmegaConf.to_container(generation)
-        identity = {"version": 3, "url": paper.url, "title": paper.title, "abstract": paper.abstract,
+        identity = {"version": 4, "url": paper.url, "title": paper.title, "abstract": paper.abstract,
                     "language": config.llm.get("language"), "backend": config.llm.get("backend"),
                     "full_text": config.executor.get("fetch_full_text", True),
                     "generation_kwargs": generation,

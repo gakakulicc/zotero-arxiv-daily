@@ -69,7 +69,7 @@ llm:
   language: Chinese
   local:
     n_ctx: 8192
-    max_tokens: 512
+    max_tokens: 768
     n_threads: 4
 source:
   arxiv:

@@ -55,6 +55,10 @@ def main(profile="default"):
             raise RuntimeError(f"Independent institution extraction missed an explicit institution: {affiliations}")
         if '<think>' in summary or '</think>' in summary:
             raise RuntimeError("The final summary contains reasoning delimiters")
+        if index == 0:
+            unsupported = ("competitive summary quality", "reducing latency", "consumer hardware", "experimental results demonstrate")
+            if any(phrase in summary.lower() for phrase in unsupported):
+                raise RuntimeError("The abstract-only control invented evaluation or hardware claims")
         outputs.append({"profile": profile, "model": config.llm.local.repo_id, "filename": config.llm.local.filename,
                         "title": item.title, "summary": summary, "affiliations": affiliations, "evidence_scope": item.evidence_scope})
         logger.info(f"Real local Qwen batch item {index + 1}/3 succeeded: {summary}")

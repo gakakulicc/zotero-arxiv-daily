@@ -68,7 +68,8 @@ uv sync --extra local-llm
 uv run --extra local-llm src/zotero_arxiv_daily/main.py
 ```
 
-The original model and custom limits are preserved:
+The default local model is Qwen3.5-4B Q5_K_M, with independent summary and institution requests.
+See [model configuration, rollback and output quality](docs/LOCAL_MODEL_QUALITY.md).
 
 ```yaml
 llm:
@@ -76,11 +77,14 @@ llm:
   language: English # Change to Chinese if desired.
   local:
     model_path: null
-    repo_id: Qwen/Qwen2.5-3B-Instruct-GGUF
-    filename: qwen2.5-3b-instruct-q4_k_m.gguf
+    repo_id: unsloth/Qwen3.5-4B-GGUF
+    filename: Qwen3.5-4B-Q5_K_M.gguf
+    revision: e87f176479d0855a907a41277aca2f8ee7a09523
+    enable_thinking: false
     n_ctx: 8192
     n_threads: 4
-    max_tokens: 512
+    max_tokens: 768
+    input_tokens: 4000
     temperature: 0
 ```
 

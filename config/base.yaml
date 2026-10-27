@@ -27,13 +27,13 @@ llm:
   backend: api # 'local' for direct GGUF inference; 'api' for an OpenAI-compatible endpoint.
   local:
     model_path: null # Optional existing GGUF file. Otherwise downloaded from Hugging Face.
-    repo_id: Qwen/Qwen2.5-3B-Instruct-GGUF
-    filename: qwen2.5-3b-instruct-q4_k_m.gguf
-    revision: null # Pin a Hugging Face commit for reproducible GGUF downloads.
-    enable_thinking: null # false explicitly disables thinking through the model's own chat template.
+    repo_id: unsloth/Qwen3.5-4B-GGUF
+    filename: Qwen3.5-4B-Q5_K_M.gguf
+    revision: e87f176479d0855a907a41277aca2f8ee7a09523 # Pinned GGUF conversion.
+    enable_thinking: false # Disable thinking through the model's own chat template.
     n_ctx: 8192
     n_threads: 4
-    max_tokens: 512
+    max_tokens: 768
     input_tokens: 4000 # Balanced abstract, method, result and conclusion excerpts.
     temperature: 0
   api:
