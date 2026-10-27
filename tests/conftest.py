@@ -40,6 +40,7 @@ def _base_config():
                 "reranker.api.key=sk-fake",
                 "reranker.api.base_url=http://localhost:30000/v1",
                 "reranker.api.model=text-embedding-3-large",
+                "reranker.local.cache_dir=null",
                 "source.arxiv.category=[cs.AI,cs.CV]",
                 "executor.source=[arxiv]",
                 "executor.reranker=api",
@@ -83,7 +84,9 @@ def stub_local_llm(monkeypatch):
 
         def create_chat_completion(self, **kwargs):
             state.requests.append(kwargs)
-            content = ('["TsingHua University", "Peking University"]'
+            content = ('{"tldr": "Local summary", "affiliations": ["TsingHua University", "Peking University"]}'
+                       if "JSON object" in kwargs["messages"][0]["content"] else
+                       '["TsingHua University", "Peking University"]'
                        if "affiliations" in kwargs["messages"][0]["content"]
                        else "Local summary")
             return {"choices": [{"message": {"content": content}}]}

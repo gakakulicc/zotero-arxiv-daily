@@ -30,6 +30,8 @@ jobs:
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
+      OMP_NUM_THREADS: 2
+      MKL_NUM_THREADS: 2
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
@@ -41,3 +43,5 @@ jobs:
           restore-keys: ${{ runner.os }}-hf-v1-
       - name: Generate a summary with the real GGUF model, without LLM API keys
         run: uv run --locked --extra local-llm scripts/check_local_llm.py
+      - name: Measure real CPU embeddings and cache reuse
+        run: uv run --locked scripts/check_performance.py

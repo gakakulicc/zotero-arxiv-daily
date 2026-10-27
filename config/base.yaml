@@ -32,6 +32,7 @@ llm:
     n_ctx: 8192
     n_threads: 4
     max_tokens: 512
+    input_tokens: 2000 # Combined summary input budget; raise for more full-text context.
     temperature: 0
   api:
     key: ??? # API Key of your LLM API. Example: sk-xxx
@@ -45,11 +46,11 @@ llm:
 
 reranker:
   local:
-    model: jinaai/jina-embeddings-v5-text-nano-retrieval # The Hugging Face model name of the local embedding model. Example: jinaai/jina-embeddings-v5-text-nano
-    encode_kwargs:
-    # The kwargs for the encode method of the local embedding model. Details see [here](https://www.sbert.net/docs/package_reference/SentenceTransformer.html#sentence_transformers.SentenceTransformer.encode)
-      task: retrieval
-      prompt_name: document
+    model: avsolatorio/GIST-small-Embedding-v0 # Original fork's small CPU-friendly English embedding model.
+    max_seq_length: 512
+    batch_size: 32
+    cache_dir: .cache/embeddings # Only text hashes and numeric vectors are stored, never raw abstracts.
+    encode_kwargs: {} # Jina-specific task/prompt arguments do not apply to GIST.
   api:
     key: null # API Key of your embedding model API. Example: sk-xxx
     base_url: null # API URL of your embedding model API. Example: https://api.openai.com/v1
@@ -62,3 +63,6 @@ executor:
   max_paper_num: 100 # The maximum number of the papers presented in the email. Example: 100
   source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv','chemrxiv']
   reranker: local # The reranker to use. Example: 'local' or 'api'
+  fetch_full_text: true # Only enrich selected papers after ranking; false uses abstracts alone.
+  combine_llm_requests: true # One local model request for both TLDR and affiliations.
+  conversion_delay: 0 # Metadata conversion performs no per-paper network access.

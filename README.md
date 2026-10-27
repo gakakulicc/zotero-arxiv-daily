@@ -55,6 +55,7 @@
 
 For upgrading an existing fork with old Actions settings, see
 [GitHub Actions setup and compatibility notes](docs/ACTIONS_SETUP.md).
+For CPU optimizations and speed/quality options, see [performance settings](docs/PERFORMANCE.md).
 
 This fork supports both **direct local GGUF inference** and an **OpenAI-compatible API**.
 An online or paid LLM API is **not required** in local mode. The upstream version merged

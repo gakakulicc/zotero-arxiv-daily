@@ -27,6 +27,8 @@ def main():
     if not isinstance(summary, str) or not summary.strip():
         raise RuntimeError("The local GGUF model did not generate a summary")
     logger.info(f"Real local Qwen inference succeeded: {summary}")
+    summary, affiliations = paper._generate_insights_with_llm(client, config.llm)
+    logger.info(f"Combined local JSON inference succeeded: {summary}; affiliations={affiliations}")
 
 
 if __name__ == "__main__":

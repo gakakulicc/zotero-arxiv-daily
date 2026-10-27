@@ -1,16 +1,23 @@
 name: Send emails daily
 on:
   workflow_dispatch:
+    inputs:
+      force_send_empty:
+        description: Send a confirmation email even when no new papers are available
+        type: boolean
+        default: true
   schedule:
     - cron: '0 22 * * *'
 
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
+      OMP_NUM_THREADS: 2
+      MKL_NUM_THREADS: 2
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -24,6 +31,13 @@ jobs:
           path: ~/.cache/huggingface/hub
           key: ${{ runner.os }}-hf-v1-${{ hashFiles('config/base.yaml') }}
           restore-keys: ${{ runner.os }}-hf-v1-
+
+      - name: Cache computed embeddings
+        uses: actions/cache@v5
+        with:
+          path: .cache/embeddings
+          key: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-
 
       - name: Run script
         env:
@@ -45,8 +59,12 @@ jobs:
           SEND_EMPTY: ${{ vars.SEND_EMPTY }}
           LLM_BACKEND: ${{ vars.LLM_BACKEND }}
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
+          FORCE_SEND_EMPTY: ${{ github.event_name == 'workflow_dispatch' && inputs.force_send_empty && 'true' || 'false' }}
         run: |
           if [ -n "$CUSTOM_CONFIG" ]; then
             printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
+          fi
+          if [ "$FORCE_SEND_EMPTY" = "true" ]; then
+            export SEND_EMPTY=true
           fi
           uv run --locked --extra local-llm src/zotero_arxiv_daily/main.py

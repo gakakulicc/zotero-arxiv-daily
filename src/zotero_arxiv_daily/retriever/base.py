@@ -21,6 +21,10 @@ class BaseRetriever(ABC):
     def convert_to_paper(self, raw_paper:RawPaperItem) -> Paper | None:
         pass
 
+    def enrich_paper(self, paper: Paper) -> Paper:
+        """Fetch optional full text after ranking; metadata-only sources need no work."""
+        return paper
+
     def retrieve_papers(self) -> list[Paper]:
         raw_papers = self._retrieve_raw_papers()
         logger.info("Processing papers...")
@@ -33,7 +37,9 @@ class BaseRetriever(ABC):
                 continue
             if paper is not None:
                 papers.append(paper)
-            sleep(1)
+            delay = self.config.executor.get("conversion_delay", 0)
+            if delay:
+                sleep(delay)
         return papers
 
 registered_retrievers = {}

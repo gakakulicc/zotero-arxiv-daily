@@ -10,8 +10,10 @@ import json
 RawPaperItem = TypeVar('RawPaperItem')
 
 
-def _request_llm(openai_client: OpenAI | LocalLLM, llm_params: dict, messages: list[dict]) -> str:
+def _request_llm(openai_client: OpenAI | LocalLLM, llm_params: dict, messages: list[dict], json_output: bool = False) -> str:
     if llm_params.get("backend", "api") == "local":
+        if json_output:
+            return openai_client.generate(messages, json_output=True)
         return openai_client.generate(messages)
     api_mode = llm_params.get("api_mode", "chat_completion")
     generation_kwargs = dict(llm_params.get("generation_kwargs", {}))
@@ -58,6 +60,41 @@ class Paper:
     tldr: Optional[str] = None
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
+
+    def _generate_insights_with_llm(self, client: OpenAI | LocalLLM, llm_params: dict) -> tuple[str, list[str]]:
+        lang = llm_params.get("language", "English")
+        prompt = f"Title: {self.title}\nAbstract: {self.abstract}\n"
+        if self.full_text:
+            prompt += f"Paper text (beginning):\n{self.full_text}"
+        limit = llm_params.get("local", {}).get("input_tokens", 2000)
+        prompt = _truncate_prompt(client, llm_params, prompt, limit)
+        output = _request_llm(client, llm_params, [
+            {"role": "system", "content": (
+                f"Summarize the scientific paper in one sentence in {lang} and extract the authors' institutions. "
+                'Return exactly one JSON object: {"tldr": "summary", "affiliations": ["institution"]}. '
+                "Use an empty affiliations list if the text gives no institutions. Do not guess institutions. "
+                "Return valid JSON only, without markdown or explanations."
+            )},
+            {"role": "user", "content": prompt},
+        ], json_output=True)
+        # Accept surrounding code fences, but validate the actual JSON and field types.
+        start, end = output.find('{'), output.rfind('}')
+        if start < 0 or end < start:
+            raise ValueError("Local model did not return a JSON object")
+        data = json.loads(output[start:end + 1])
+        summary, affiliations = data.get("tldr"), data.get("affiliations")
+        if (not isinstance(summary, str) or not summary.strip()
+                or not isinstance(affiliations, list) or any(not isinstance(item, str) for item in affiliations)):
+            raise ValueError("Local model returned invalid summary or affiliations fields")
+        return summary, list(dict.fromkeys(affiliations))
+
+    def generate_insights(self, client: OpenAI | LocalLLM, llm_params: dict) -> str:
+        try:
+            self.tldr, self.affiliations = self._generate_insights_with_llm(client, llm_params)
+        except Exception as exc:
+            logger.warning(f"Failed to generate combined summary of {self.url}; using abstract: {exc}")
+            self.tldr, self.affiliations = self.abstract, None
+        return self.tldr
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI | LocalLLM,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')

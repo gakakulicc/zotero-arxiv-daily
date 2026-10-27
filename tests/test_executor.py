@@ -151,7 +151,8 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
 
 @pytest.mark.parametrize("backend", ["api", "local"])
 @pytest.mark.parametrize("paper_limit", [1, -1])
-def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limit):
+@pytest.mark.parametrize("fetch_full_text", [True, False])
+def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limit, fetch_full_text):
     """Full pipeline: Zotero fetch -> filter -> retrieve -> rerank -> TLDR -> email."""
     import smtplib
 
@@ -171,6 +172,7 @@ def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limi
         config.executor.reranker = "api"
         config.executor.send_empty = False
         config.executor.max_paper_num = paper_limit
+        config.executor.fetch_full_text = fetch_full_text
         config.llm.backend = backend
         if backend == "local":
             del config.llm.api  # Local inference must work without any LLM API settings.
@@ -202,6 +204,8 @@ def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limi
         "retrieve_papers",
         lambda self: retrieved,
     )
+    enriched = []
+    monkeypatch.setattr(registered_retrievers["arxiv"], "enrich_paper", lambda self, paper: enriched.append(paper.url) or paper)
 
     # 4. Stub SMTP
     sent = []
@@ -220,9 +224,10 @@ def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limi
     assert "text/html" in email_body
     expected_count = 1 if paper_limit == 1 else 2
     assert sum(paper.tldr is not None for paper in retrieved) == expected_count
+    assert len(enriched) == (expected_count if fetch_full_text else 0)
     if backend == "local":
         assert len(stub_local_llm.loads) == 1
-        assert len(stub_local_llm.requests) == 2 * expected_count
+        assert len(stub_local_llm.requests) == expected_count
 
 
 def test_run_no_papers_send_empty_false(config, monkeypatch):

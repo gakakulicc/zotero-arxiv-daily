@@ -63,6 +63,21 @@ def test_arxiv_retriever(config, mock_feedparser, monkeypatch):
     assert set(p.title for p in papers) == set(e.title for e in new_entries)
 
 
+def test_metadata_retrieval_does_not_download_full_text(config, mock_feedparser, monkeypatch):
+    calls = []
+    monkeypatch.setattr(arxiv_retriever, "extract_text_from_tar", lambda paper: calls.append(paper.entry_id) or "full text")
+    retriever = ArxivRetriever(config)
+    papers = retriever.retrieve_papers()
+    assert papers
+    assert calls == []
+    assert all(paper.full_text is None for paper in papers)
+    retriever.enrich_paper(papers[0])
+    assert calls == [papers[0].url]
+    assert papers[0].full_text == "full text"
+    retriever.enrich_paper(papers[0])
+    assert calls == [papers[0].url]
+
+
 def test_run_with_hard_timeout_returns_value():
     result = _run_with_hard_timeout(
         # Windows spawns a new interpreter and imports dependencies before running the worker.

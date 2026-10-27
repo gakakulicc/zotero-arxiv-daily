@@ -72,3 +72,27 @@ def test_local_rejects_oversized_system_prompt(config, stub_local_llm):
             {"role": "user", "content": "Summarize"},
         ])
     assert stub_local_llm.requests == []
+
+
+def test_combined_insights_make_one_local_request(config, stub_local_llm):
+    config.llm.backend = "local"
+    paper = make_sample_paper()
+    assert paper.generate_insights(LocalLLM(config.llm.local), config.llm) == "Local summary"
+    assert len(stub_local_llm.requests) == 1
+    assert set(paper.affiliations) == {"TsingHua University", "Peking University"}
+    assert stub_local_llm.requests[0]["max_tokens"] == 512
+    assert stub_local_llm.requests[0]["response_format"]["type"] == "json_object"
+
+
+@pytest.mark.parametrize("output", ["not json", '{"tldr": "ok", "affiliations": "bad"}', '{"tldr": "", "affiliations": []}'])
+def test_combined_insights_fall_back_without_retrying_expensive_generation(config, output):
+    from types import SimpleNamespace
+
+    config.llm.backend = "local"
+    calls = []
+    client = SimpleNamespace(truncate_prompt=lambda text, limit: text,
+                             generate=lambda messages, **kwargs: calls.append(messages) or output)
+    paper = make_sample_paper()
+    assert paper.generate_insights(client, config.llm) == paper.abstract
+    assert paper.affiliations is None
+    assert len(calls) == 1

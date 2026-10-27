@@ -5,10 +5,12 @@ on:
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
+      OMP_NUM_THREADS: 2
+      MKL_NUM_THREADS: 2
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -22,6 +24,13 @@ jobs:
           path: ~/.cache/huggingface/hub
           key: ${{ runner.os }}-hf-v1-${{ hashFiles('config/base.yaml') }}
           restore-keys: ${{ runner.os }}-hf-v1-
+
+      - name: Cache computed embeddings
+        uses: actions/cache@v5
+        with:
+          path: .cache/embeddings
+          key: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-
 
 
       - name: Run script
@@ -46,6 +55,7 @@ jobs:
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
         run: |
           export DEBUG=true
+          export SEND_EMPTY=true
           if [ -n "$CUSTOM_CONFIG" ]; then
             printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
           fi

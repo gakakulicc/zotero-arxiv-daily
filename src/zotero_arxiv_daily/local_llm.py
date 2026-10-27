@@ -37,7 +37,7 @@ class LocalLLM:
         tokens = self._tokens(prompt)
         return self.model.detokenize(tokens[:max_tokens]).decode("utf-8", errors="ignore")
 
-    def generate(self, messages: list[dict]) -> str:
+    def generate(self, messages: list[dict], json_output: bool = False) -> str:
         messages = [dict(message) for message in messages]
         # Reserve room for the chat template and output, using the GGUF tokenizer.
         budget = self.config.n_ctx - self.config.max_tokens - 64 - 16 * len(messages)
@@ -45,9 +45,18 @@ class LocalLLM:
         if prefix_size >= budget:
             raise ValueError("Local LLM context is too small for the system prompt and output")
         messages[-1]["content"] = self.truncate_prompt(messages[-1]["content"], budget - prefix_size)
+        kwargs = {}
+        if json_output:
+            kwargs["response_format"] = {"type": "json_object", "schema": {
+                "type": "object",
+                "properties": {"tldr": {"type": "string"},
+                               "affiliations": {"type": "array", "items": {"type": "string"}}},
+                "required": ["tldr", "affiliations"], "additionalProperties": False,
+            }}
         response = self.model.create_chat_completion(
             messages=messages,
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
+            **kwargs,
         )
         return response["choices"][0]["message"]["content"]

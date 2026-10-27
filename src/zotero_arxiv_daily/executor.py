@@ -12,6 +12,7 @@ from .utils import send_email, parse_receivers
 from openai import OpenAI
 from .local_llm import LocalLLM
 from tqdm import tqdm
+from time import perf_counter
 
 
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
@@ -111,6 +112,7 @@ class Executor:
 
     
     def run(self):
+        started = perf_counter()
         corpus = self.fetch_zotero_corpus()
         corpus = self.filter_corpus(corpus)
         if len(corpus) == 0:
@@ -129,17 +131,30 @@ class Executor:
         reranked_papers = []
         if len(all_papers) > 0:
             logger.info("Reranking papers...")
+            ranking_started = perf_counter()
             reranked_papers = self.reranker.rerank(all_papers, corpus)
+            logger.info(f"Ranking completed in {perf_counter() - ranking_started:.1f}s")
             if self.config.executor.max_paper_num != -1:
                 reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
-            logger.info("Generating TLDR and affiliations...")
+            logger.info(f"Generating TLDR and affiliations for {len(reranked_papers)} selected papers...")
+            generation_started = perf_counter()
             for p in tqdm(reranked_papers):
-                p.generate_tldr(self.openai_client, self.config.llm)
-                p.generate_affiliations(self.openai_client, self.config.llm)
+                if self.config.executor.get("fetch_full_text", True):
+                    try:
+                        self.retrievers[p.source].enrich_paper(p)
+                    except Exception as exc:
+                        logger.warning(f"Full-text enrichment failed for {p.url}; using the abstract: {exc}")
+                if (self.config.llm.get("backend", "api") == "local"
+                        and self.config.executor.get("combine_llm_requests", True)):
+                    p.generate_insights(self.openai_client, self.config.llm)
+                else:
+                    p.generate_tldr(self.openai_client, self.config.llm)
+                    p.generate_affiliations(self.openai_client, self.config.llm)
+            logger.info(f"Paper enrichment and generation completed in {perf_counter() - generation_started:.1f}s")
         elif not self.config.executor.send_empty:
             logger.info("No new papers found. No email will be sent.")
             return
         logger.info("Sending email...")
         email_content = render_email(reranked_papers)
         send_email(self.config, email_content)
-        logger.info("Email sent successfully")
+        logger.info(f"Email sent successfully; total runtime {perf_counter() - started:.1f}s")

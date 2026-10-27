@@ -211,6 +211,7 @@ def _entry_to_arxiv_result(entry: Any) -> ArxivResult:
 class ArxivRetriever(BaseRetriever):
     def __init__(self, config):
         super().__init__(config)
+        self._raw_by_url = {}
         if self.config.source.arxiv.category is None:
             raise ValueError("category must be specified for arxiv.")
 
@@ -279,15 +280,11 @@ class ArxivRetriever(BaseRetriever):
         return raw_papers
 
     def convert_to_paper(self, raw_paper: ArxivResult) -> Paper:
+        self._raw_by_url[raw_paper.entry_id] = raw_paper
         title = raw_paper.title
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_tar(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_html(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_pdf(raw_paper)
         return Paper(
             source=self.name,
             title=title,
@@ -295,8 +292,19 @@ class ArxivRetriever(BaseRetriever):
             abstract=abstract,
             url=raw_paper.entry_id,
             pdf_url=pdf_url,
-            full_text=full_text,
         )
+
+    def enrich_paper(self, paper: Paper) -> Paper:
+        raw_paper = self._raw_by_url.get(paper.url)
+        if paper.full_text is not None or raw_paper is None:
+            return paper
+        full_text = extract_text_from_tar(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_html(raw_paper)
+        if full_text is None:
+            full_text = extract_text_from_pdf(raw_paper)
+        paper.full_text = full_text
+        return paper
 
 
 def extract_text_from_html(paper: ArxivResult) -> str | None:
