@@ -18,6 +18,24 @@ def _raise_runtime_error() -> None:
     raise RuntimeError("boom")
 
 
+def test_rss_http_request_has_a_timeout(monkeypatch):
+    calls = []
+    class Response:
+        status_code = 503
+        content = b'not a feed'
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+    def get(url, **kwargs):
+        calls.append(kwargs)
+        return Response()
+    monkeypatch.setattr(arxiv_retriever.requests, "get", get)
+    feed = arxiv_retriever._fetch_rss("https://rss.arxiv.org/atom/cs.RO")
+    assert calls[0]["timeout"] == (10, 60)
+    assert feed.status == 503
+
+
 def test_arxiv_retriever(config, mock_feedparser, monkeypatch):
     monkeypatch.setattr("zotero_arxiv_daily.retriever.base.sleep", lambda _: None)
 
@@ -258,7 +276,7 @@ def test_retrieve_raw_papers_backs_off_when_rate_limited(config, mock_feedparser
             return SimpleNamespace(status=429, feed=SimpleNamespace(title="Too Many Requests"), entries=[])
         return mock_feedparser
 
-    monkeypatch.setattr(arxiv_retriever.feedparser, "parse", parse_rate_limited)
+    monkeypatch.setattr(arxiv_retriever, "_fetch_rss", parse_rate_limited)
     papers = ArxivRetriever(config)._retrieve_raw_papers()
     assert papers
     assert len(attempts) == 3
@@ -280,7 +298,7 @@ def test_retrieve_raw_papers_retries_on_http_failure(config, mock_feedparser, mo
             )
         return mock_feedparser
 
-    monkeypatch.setattr(arxiv_retriever.feedparser, "parse", mock_parse_flaky)
+    monkeypatch.setattr(arxiv_retriever, "_fetch_rss", mock_parse_flaky)
     retriever = ArxivRetriever(config)
     raw = retriever._retrieve_raw_papers()
     assert len(calls) == 2

@@ -76,3 +76,11 @@ def test_get_block_html_contains_all_fields():
 def test_get_empty_html():
     html = get_empty_html()
     assert "No Papers Today" in html
+
+
+def test_paper_text_cannot_inject_html_into_the_email():
+    paper = make_sample_paper(title='<script>bad()</script>', tldr='x < y & z', score=7.0)
+    html = render_email([paper])
+    assert '<script>' not in html
+    assert '&lt;script&gt;' in html
+    assert 'x &lt; y &amp; z' in html

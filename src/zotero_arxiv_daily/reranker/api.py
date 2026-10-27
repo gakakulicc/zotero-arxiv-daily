@@ -4,7 +4,8 @@ import numpy as np
 @register_reranker("api")
 class ApiReranker(BaseReranker):
     def get_similarity_score(self, s1: list[str], s2: list[str]) -> np.ndarray:
-        client = OpenAI(api_key=self.config.reranker.api.key, base_url=self.config.reranker.api.base_url)
+        client = OpenAI(api_key=self.config.reranker.api.key, base_url=self.config.reranker.api.base_url,
+                        timeout=120, max_retries=2)
         batch_size = self.config.reranker.api.get("batch_size") or 64
         all_texts = s1 + s2
         all_embeddings = []

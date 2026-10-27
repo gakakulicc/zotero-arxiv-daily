@@ -5,7 +5,9 @@ from .utils import glob_match
 from .retriever import get_retriever_cls
 from .protocol import CorpusPaper
 import random
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import hashlib
+import os
 from .reranker import get_reranker_cls
 from .construct_email import render_email
 from .utils import send_email, parse_receivers
@@ -13,6 +15,8 @@ from openai import OpenAI
 from .local_llm import LocalLLM
 from tqdm import tqdm
 from time import perf_counter
+from .digest_state import DigestState
+from .reporting import record_delivery
 
 
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
@@ -45,7 +49,7 @@ class Executor:
         if backend == "local":
             self.openai_client = LocalLLM(config.llm.local)
         elif backend == "api":
-            self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)
+            self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url, timeout=120, max_retries=2)
         else:
             raise ValueError(f"Unsupported llm.backend: {backend}. Expected 'local' or 'api'.")
     def fetch_zotero_corpus(self) -> list[CorpusPaper]:
@@ -112,22 +116,72 @@ class Executor:
 
     
     def run(self):
+        self.notices = []
+        self.delivery_attempted = False
+        state = DigestState(self.config.executor.get("state_dir"))
+        day = datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+        target = '\0'.join([self.config.email.sender, *parse_receivers(self.config.email.receiver),
+                            "test" if self.config.executor.debug else "daily"])
+        self.delivery_key = "delivered:" + day + ':' + hashlib.sha256(target.encode()).hexdigest()
+        try:
+            if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and state.get(self.delivery_key):
+                logger.info("Today's scheduled digest was already accepted by SMTP; skipping the retry slot")
+                record_delivery(self.config.executor.get("report_dir"), "", "already_delivered", [], [])
+                return
+            self._run(state)
+        except Exception as exc:
+            # A failed retrieval is never presented as a normal day with no new papers.
+            if not self.delivery_attempted:
+                self.notices.append(f"Daily digest could not complete ({type(exc).__name__}). 检索或排序失败，不能据此判断当天没有新论文。")
+                try:
+                    self._deliver([], state, failure=True)
+                except Exception as notification_error:
+                    logger.error(f"Failure notification could not be sent: {type(notification_error).__name__}")
+            raise
+        finally:
+            state.close()
+
+    def _deliver(self, papers, state, failure=False):
+        html = render_email(papers, self.notices)
+        directory = self.config.executor.get("report_dir")
+        self.delivery_attempted = True
+        record_delivery(directory, html, "prepared", papers, self.notices)
+        try:
+            send_email(self.config, html)
+        except Exception:
+            record_delivery(directory, html, "smtp_failed_or_unconfirmed", papers, self.notices)
+            raise
+        record_delivery(directory, html, "failure_notice_sent" if failure else "smtp_accepted", papers, self.notices)
+        if not failure:
+            state.put(self.delivery_key, {"smtp_accepted": True})
+
+    def _run(self, state):
         started = perf_counter()
         corpus = self.fetch_zotero_corpus()
         corpus = self.filter_corpus(corpus)
         if len(corpus) == 0:
-            logger.error(f"No zotero papers found. Please check your zotero settings:\n{self.config.zotero}")
-            return
+            raise RuntimeError("No usable Zotero abstracts remain after filtering; check library and collection settings")
         all_papers = []
+        sources_failed = 0
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
-            papers = retriever.retrieve_papers()
+            try:
+                papers = retriever.retrieve_papers()
+            except Exception as exc:
+                sources_failed += 1
+                self.notices.append(f"Source {source} could not be retrieved ({type(exc).__name__}); this digest may be incomplete.")
+                logger.warning(self.notices[-1])
+                continue
             if len(papers) == 0:
                 logger.info(f"No {source} papers found")
                 continue
             logger.info(f"Retrieved {len(papers)} {source} papers")
             all_papers.extend(papers)
         logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
+        if sources_failed == len(self.retrievers):
+            raise RuntimeError("All configured paper sources failed")
+        if sources_failed and not all_papers:
+            raise RuntimeError("No papers were available while at least one source failed")
         reranked_papers = []
         if len(all_papers) > 0:
             logger.info("Reranking papers...")
@@ -138,23 +192,41 @@ class Executor:
                 reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             logger.info(f"Generating TLDR and affiliations for {len(reranked_papers)} selected papers...")
             generation_started = perf_counter()
+            budget_notice = False
             for p in tqdm(reranked_papers):
+                cache_key = state.paper_key(p, self.config)
+                if state.restore_paper(cache_key, p):
+                    logger.info(f"Restored completed summary for {p.url}")
+                    continue
+                budget = self.config.executor.get("generation_budget_minutes", 240) * 60
+                if perf_counter() - started >= budget:
+                    p.tldr, p.affiliations = p.abstract, None
+                    p.generation_status, p.evidence_scope = "abstract_fallback", "abstract_only"
+                    if not budget_notice:
+                        self.notices.append("The processing time budget was reached; remaining selected papers retain their original abstracts. 部分入选论文保留原始摘要，未冒充模型总结。")
+                        budget_notice = True
+                    continue
                 if self.config.executor.get("fetch_full_text", True):
                     try:
                         self.retrievers[p.source].enrich_paper(p)
                     except Exception as exc:
                         logger.warning(f"Full-text enrichment failed for {p.url}; using the abstract: {exc}")
-                if (self.config.llm.get("backend", "api") == "local"
-                        and self.config.executor.get("combine_llm_requests", True)):
-                    p.generate_insights(self.openai_client, self.config.llm)
-                else:
-                    p.generate_tldr(self.openai_client, self.config.llm)
-                    p.generate_affiliations(self.openai_client, self.config.llm)
+                try:
+                    if (self.config.llm.get("backend", "api") == "local"
+                            and self.config.executor.get("combine_llm_requests", True)):
+                        p.generate_insights(self.openai_client, self.config.llm)
+                    else:
+                        p.generate_tldr(self.openai_client, self.config.llm)
+                        p.generate_affiliations(self.openai_client, self.config.llm)
+                except Exception as exc:
+                    logger.warning(f"Paper generation failed for {p.url}: {type(exc).__name__}; continuing")
+                    p.tldr, p.affiliations, p.generation_status = p.abstract, None, "abstract_fallback"
+                state.save_paper(cache_key, p)
             logger.info(f"Paper enrichment and generation completed in {perf_counter() - generation_started:.1f}s")
         elif not self.config.executor.send_empty:
             logger.info("No new papers found. No email will be sent.")
+            record_delivery(self.config.executor.get("report_dir"), "", "empty_skipped", [], self.notices)
             return
         logger.info("Sending email...")
-        email_content = render_email(reranked_papers)
-        send_email(self.config, email_content)
+        self._deliver(reranked_papers, state)
         logger.info(f"Email sent successfully; total runtime {perf_counter() - started:.1f}s")

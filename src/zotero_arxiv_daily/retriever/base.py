@@ -29,10 +29,12 @@ class BaseRetriever(ABC):
         raw_papers = self._retrieve_raw_papers()
         logger.info("Processing papers...")
         papers = []
+        conversion_errors = 0
         for raw_paper in tqdm(raw_papers, total=len(raw_papers), desc="Converting papers"):
             try:
                 paper = self.convert_to_paper(raw_paper)
             except Exception as exc:
+                conversion_errors += 1
                 logger.warning(f"Skipping paper {getattr(raw_paper, 'title', raw_paper)}: {exc}")
                 continue
             if paper is not None:
@@ -40,6 +42,8 @@ class BaseRetriever(ABC):
             delay = self.config.executor.get("conversion_delay", 0)
             if delay:
                 sleep(delay)
+        if raw_papers and conversion_errors == len(raw_papers):
+            raise RuntimeError("The source returned entries but all failed metadata conversion")
         return papers
 
 registered_retrievers = {}

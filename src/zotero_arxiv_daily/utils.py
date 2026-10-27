@@ -177,21 +177,27 @@ def send_email(config:DictConfig, html:str):
     msg['Subject'] = Header(f'Daily arXiv {today}', 'utf-8').encode()
 
     if smtp_port == 465:
-        server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+        server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=60)
     else:
         try:
-            server = smtplib.SMTP(smtp_server, smtp_port)
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=60)
             server.starttls()
         except Exception as e:
             logger.debug(f"Failed to use TLS. {e}\nTry to use SSL.")
             try:
-                server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+                server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=60)
             except Exception as e:
                 logger.debug(f"Failed to use SSL. {e}\nTry to use plain text.")
-                server = smtplib.SMTP(smtp_server, smtp_port)
+                server = smtplib.SMTP(smtp_server, smtp_port, timeout=60)
 
     try:
         server.login(sender, password)
-        server.sendmail(sender, receiver_list, msg.as_string())
+        refused = server.sendmail(sender, receiver_list, msg.as_string())
+        if refused:
+            raise RuntimeError(f"SMTP refused {len(refused)} recipient(s); some recipients may already have received the email")
     finally:
-        server.quit()
+        # A disconnect during QUIT must not turn an accepted message into a failed job.
+        try:
+            server.quit()
+        except (OSError, smtplib.SMTPException):
+            logger.warning("SMTP connection closed during QUIT")

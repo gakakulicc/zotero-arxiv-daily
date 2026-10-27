@@ -32,7 +32,7 @@ llm:
     n_ctx: 8192
     n_threads: 4
     max_tokens: 512
-    input_tokens: 2000 # Combined summary input budget; raise for more full-text context.
+    input_tokens: 4000 # Balanced abstract, method, result and conclusion excerpts.
     temperature: 0
   api:
     key: ??? # API Key of your LLM API. Example: sk-xxx
@@ -43,6 +43,7 @@ llm:
     max_tokens: 16384
     model: ???
   language: English # Preferred language for the TL;DR. Example: English
+  summary_attempts: 2 # Bounded retries; exhausted papers retain their original abstract with a label.
 
 reranker:
   local:
@@ -65,4 +66,7 @@ executor:
   reranker: local # The reranker to use. Example: 'local' or 'api'
   fetch_full_text: true # Only enrich selected papers after ranking; false uses abstracts alone.
   combine_llm_requests: true # One local model request for both TLDR and affiliations.
+  state_dir: .cache/digests # Completed public-paper summaries and hashed delivery markers; no Zotero corpus or credentials.
+  report_dir: .cache/delivery # Latest rendered email and machine-readable delivery status.
+  generation_budget_minutes: 240 # Leave room to send the digest before the 300-minute Actions limit.
   conversion_delay: 0 # Metadata conversion performs no per-paper network access.

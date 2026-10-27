@@ -2,10 +2,17 @@ name: Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-digest-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
@@ -39,6 +46,13 @@ jobs:
           restore-keys: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-
 
 
+      - name: Restore completed summaries and delivery markers
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/digests
+          key: ${{ runner.os }}-digest-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ runner.os }}-digest-state-v2-
+
       - name: Run script
         env:
           ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
@@ -66,3 +80,18 @@ jobs:
             printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
           fi
           uv run --locked --extra local-llm src/zotero_arxiv_daily/main.py
+
+      - name: Save completed work even if delivery failed
+        if: always() && hashFiles('.cache/digests/**') != ''
+        uses: actions/cache/save@v5
+        with:
+          path: .cache/digests
+          key: ${{ runner.os }}-digest-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Preserve rendered digest and delivery status
+        if: always() && hashFiles('.cache/delivery/**') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-delivery-report
+          path: .cache/delivery
+          retention-days: 14

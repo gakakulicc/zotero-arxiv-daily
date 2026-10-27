@@ -199,6 +199,16 @@ def test_send_email_465_uses_ssl_directly(config, monkeypatch):
     assert len(sent) == 1
 
 
+def test_smtp_quit_disconnect_does_not_report_an_accepted_email_as_failed(config, monkeypatch):
+    sent = []
+    class SMTP(make_stub_smtp(sent)):
+        def quit(self):
+            raise smtplib.SMTPServerDisconnected("closed")
+    monkeypatch.setattr(smtplib, "SMTP", SMTP)
+    send_email(config, "<html>accepted</html>")
+    assert len(sent) == 1
+
+
 def test_send_email_falls_back_to_ssl(config, monkeypatch):
     sent = []
     call_count = {"smtp": 0}

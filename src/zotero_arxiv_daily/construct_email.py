@@ -1,5 +1,6 @@
 from .protocol import Paper
 import math
+from html import escape
 
 
 framework = """
@@ -85,7 +86,9 @@ def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affi
     </tr>
 </table>
 """
-    return block_template.format(title=title, authors=authors,rate=rate, tldr=tldr, pdf_url=pdf_url, affiliations=affiliations)
+    return block_template.format(**{key: escape(str(value or ""), quote=True) for key, value in
+                                  dict(title=title, authors=authors, rate=rate, tldr=tldr,
+                                       pdf_url=pdf_url, affiliations=affiliations).items()})
 
 def get_stars(score:float):
     full_star = '<span class="full-star">⭐</span>'
@@ -104,10 +107,12 @@ def get_stars(score:float):
         return '<div class="star-wrapper">'+full_star * full_star_num + half_star * half_star_num + '</div>'
 
 
-def render_email(papers:list[Paper]) -> str:
+def render_email(papers:list[Paper], notices: list[str] | None = None) -> str:
     parts = []
+    if notices:
+        parts.append('<p><strong>Run notice:</strong> ' + '<br>'.join(escape(item) for item in notices) + '</p>')
     if len(papers) == 0 :
-        return framework.replace('__CONTENT__', get_empty_html())
+        return framework.replace('__CONTENT__', ''.join(parts) if notices else get_empty_html())
     
     for p in papers:
         #rate = get_stars(p.score)
@@ -125,7 +130,17 @@ def render_email(papers:list[Paper]) -> str:
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        parts.append(get_block_html(p.title, authors, rate, p.tldr, p.pdf_url, affiliations))
+        block = get_block_html(p.title, authors, rate, p.tldr, p.pdf_url, affiliations)
+        labels = []
+        if p.generation_status == "abstract_fallback":
+            labels.append("Summary unavailable; showing the original abstract / 摘要生成失败，以下为原始摘要")
+        if p.evidence_scope == "abstract_only":
+            labels.append("Based on abstract only / 仅依据摘要")
+        elif p.evidence_scope:
+            labels.append("Based on abstract and body excerpts / 依据摘要与正文节选")
+        if labels:
+            block = '<p style="color:#666">' + '<br>'.join(escape(label) for label in labels) + '</p>' + block
+        parts.append(block)
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)

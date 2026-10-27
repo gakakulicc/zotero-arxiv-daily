@@ -8,11 +8,19 @@ on:
         default: true
   schedule:
     - cron: '0 22 * * *'
+    - cron: '17 0 * * *' # Retry slot: skip when today's scheduled digest already reached SMTP.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-digest-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
@@ -45,6 +53,13 @@ jobs:
           key: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: ${{ runner.os }}-embeddings-v1-${{ hashFiles('config/base.yaml', 'uv.lock') }}-
 
+      - name: Restore completed summaries and delivery markers
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/digests
+          key: ${{ runner.os }}-digest-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ runner.os }}-digest-state-v2-
+
       - name: Run script
         env:
           ZOTERO_ID: ${{ secrets.ZOTERO_ID }}
@@ -62,7 +77,7 @@ jobs:
           MODEL_NAME: ${{ secrets.MODEL_NAME }}
           LANGUAGE: ${{ vars.LANGUAGE }}
           ZOTERO_IGNORE: ${{ vars.ZOTERO_IGNORE }}
-          SEND_EMPTY: ${{ vars.SEND_EMPTY }}
+          SEND_EMPTY: ${{ vars.SEND_EMPTY || 'true' }}
           LLM_BACKEND: ${{ vars.LLM_BACKEND }}
           CUSTOM_CONFIG: ${{ vars.CUSTOM_CONFIG }}
           FORCE_SEND_EMPTY: ${{ github.event_name == 'workflow_dispatch' && inputs.force_send_empty && 'true' || 'false' }}
@@ -74,3 +89,18 @@ jobs:
             export SEND_EMPTY=true
           fi
           uv run --locked --extra local-llm src/zotero_arxiv_daily/main.py
+
+      - name: Save completed work even if delivery failed
+        if: always() && hashFiles('.cache/digests/**') != ''
+        uses: actions/cache/save@v5
+        with:
+          path: .cache/digests
+          key: ${{ runner.os }}-digest-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Preserve rendered digest and delivery status
+        if: always() && hashFiles('.cache/delivery/**') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: daily-delivery-report
+          path: .cache/delivery
+          retention-days: 14

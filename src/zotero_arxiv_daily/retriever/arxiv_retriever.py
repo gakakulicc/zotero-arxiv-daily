@@ -43,6 +43,13 @@ def _download_file(url: str, path: str) -> None:
                     file.write(chunk)
 
 
+def _fetch_rss(url):
+    with requests.get(url, timeout=DOWNLOAD_TIMEOUT) as response:
+        parsed = feedparser.parse(response.content)
+        parsed["status"] = response.status_code
+        return parsed
+
+
 def _run_in_subprocess(
     result_queue: Any,
     func: Callable[..., T | None],
@@ -62,8 +69,8 @@ def _run_with_hard_timeout(
     operation: str,
     paper_title: str,
 ) -> T | None:
-    start_methods = multiprocessing.get_all_start_methods()
-    context = multiprocessing.get_context("fork" if "fork" in start_methods else start_methods[0])
+    # Retrieval continues after torch/llama.cpp have started native threads. Do not fork them.
+    context = multiprocessing.get_context("spawn")
     result_queue = context.Queue()
     process = context.Process(target=_run_in_subprocess, args=(result_queue, func, args))
     process.start()
@@ -80,6 +87,9 @@ def _run_with_hard_timeout(
         return None
 
     process.join(5)
+    if process.is_alive():
+        process.kill()
+        process.join(5)
     result_queue.close()
     result_queue.join_thread()
 
@@ -225,7 +235,10 @@ class ArxivRetriever(BaseRetriever):
         delay_time = 5
         feed = None
         for attempt in range(retry_num):
-            feed = feedparser.parse(rss_url)
+            try:
+                feed = _fetch_rss(rss_url)
+            except requests.RequestException as exc:
+                feed = feedparser.FeedParserDict(feed={}, entries=[], bozo=True, bozo_exception=type(exc).__name__)
             status = getattr(feed, "status", None)
             bozo = getattr(feed, "bozo", False)
             bozo_exc = getattr(feed, "bozo_exception", None)
@@ -309,11 +322,9 @@ class ArxivRetriever(BaseRetriever):
 
 def extract_text_from_html(paper: ArxivResult) -> str | None:
     html_url = paper.entry_id.replace("/abs/", "/html/")
-    try:
-        return _extract_text_from_html_worker(html_url)
-    except Exception as exc:
-        logger.warning(f"HTML extraction failed for {paper.title}: {exc}")
-        return None
+    return _run_with_hard_timeout(
+        _extract_text_from_html_worker, (html_url,), timeout=180,
+        operation="HTML extraction", paper_title=paper.title)
 
 
 def extract_text_from_pdf(paper: ArxivResult) -> str | None:
