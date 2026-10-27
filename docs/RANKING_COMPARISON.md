@@ -1,74 +1,34 @@
-# 真实选文对比：Jina 与 GIST-small
+# Jina 与 GIST-small：历史真实选文对比
 
-本对比不会更改每日推送的默认模型，不发邮件，也不调用摘要 LLM。
+临时对比工作流、实验脚本和专用测试已经清理。此处仅保留已完成实验的结论，
+每日默认继续使用 `avsolatorio/GIST-small-Embedding-v0`。
 
-## 实验条件
+[历史运行记录](https://github.com/gakakulicc/zotero-arxiv-daily/actions/runs/40449532789)
+使用同一份真实快照：766 篇候选论文、431 篇经原规则筛选后的 Zotero 文献，
+快照时间为北京时间 2026-10-27 12:24:58。模型修订固定，排序公式与生产环境一致。
 
-`Compare real paper selections` 在 GitHub runner 使用现有 Zotero Secrets，读取一次
-真实文献库并应用生产环境的收藏夹包含/排除规则，同时获取一次当前订阅源的候选论文。
-之后固定这份快照，避免两个模型因运行日期不同而比较了不同的论文。
+| 比较 | Top-5 重合 | Top-10 重合 | Top-20 重合 | 全部候选 Spearman |
+| --- | --- | --- | --- | --- |
+| GIST 512 / Jina 512 | 4/5 | 6/10 | 15/20 | 0.88469 |
+| GIST 512 / Jina 8192 | 4/5 | 6/10 | 15/20 | 0.88479 |
+| Jina 512 / Jina 8192 | 4/5 | 10/10 | 20/20 | 0.999995 |
 
-三个实验组：
+Jina 使用 `jinaai/jina-embeddings-v5-text-nano-retrieval`，两侧均沿用上游的
+`document` prompt 和 `retrieval` task。本批输入按 Jina tokenizer 均未超过 512 token；
+不能据此推断不同 tokenizer 的 GIST 也绝无截断。长上下文组的复用一致性检查未通过，
+实际重新计算了全部输入，不能将其耗时理解为增量验证耗时。
 
-| 组 | 模型 | 最大输入 | 编码方式 |
-| --- | --- | --- | --- |
-| gist512 | avsolatorio/GIST-small-Embedding-v0 | 512 token | 原 fork 的 GIST 方式 |
-| jina512 | jinaai/jina-embeddings-v5-text-nano-retrieval | 512 token | 原上游的 document prompt 与 retrieval task |
-| jina8192 | 与 jina512 相同修订的 Jina | 8192 token | 与 jina512 相同，检查长摘要截断的影响 |
+重合度不代表准确率。目前未完成两组差异论文的完整 VLA/WAM 人工标注，
+不能据此认定任何一组的推荐质量更高。GIST 已观察到的前列论文包括潜在动作预训练、
+VLA 适配与长时序记忆等相关工作；这支持继续作为生产基线，不构成胜出证明。
 
-两个模型的 tokenizers 不同，512 是相同数值的预算，不代表逐字相同的截断。
-两侧都使用文档编码，保持原上游的论文对论文计算方式；本次不额外调成 Query/Document
-非对称检索，不引入新的排序公式。
+历史报告的公开 Notice 被 GitHub 截断，完整 `comparison.json` 在该次运行的
+`real-paper-selection-comparison` Artifact 中（保留 14 天，需要仓库访问权限）。
+尚未取得并逐篇审阅完整名单，不能将汇总指标冒充完整质量评测。
 
-为减少重复计算，jina8192 复用明显低于 512 上限的短输入向量，并抽样重算验证是否一致。
-若验证失败会重算全部输入；较长输入全部按 8192 上限重算。报告会注明复用数量，因此
-jina8192 的耗时是增量验证耗时，不能与两个完整冷启动耗时直接比较。
+今后复核 VLA/WAM 时，应依据摘要和方法判断直接动作策略、未来状态/动作预测、
+控制与泛化的实际内容；仅出现 vision、agent 或 world model 等词不足以算直接相关。
+聊天中表达的新兴趣不会自动成为排序权重，排序仍由 Zotero 文献库及原有加权规则决定。
 
-所有组使用相同的 Zotero 添加顺序权重和余弦相似度。模型修订号固定在快照中。
-
-## 输出与判断范围
-
-- Top-5、Top-10、Top-20 重合数量、比例和 Jaccard。
-- 全部候选论文排序的 Spearman 相关系数（处理并列分数）。
-- 三种配置的前 20 篇及其在其他组中的名次。
-- 编码耗时、长于 512 个 Jina token 的摘要数量。
-- `blind-review.csv`：不显示模型名和排名的人工评价表，0=不相关、1=部分相关、2=高度相关。
-
-**重合度不是准确率。** 没有人工相关性标签时，不能凭分数更高、名单不同或模型更大
-认定哪个更准确。不同模型的原始相似度分数也没有统一标尺。
-
-先看差异论文是否符合研究兴趣，再依据人工标签比较 Precision@20、nDCG@20，才可以
-更可靠地决定长期使用哪个模型。单日结果只能代表该批候选，不保证所有日期一致。
-
-### VLA 相关性复核
-
-本次用户关注 Vision-Language-Action，复核时依据论文摘要，按下列标准打分：
-
-- 2：直接研究机器人 VLA 策略、视觉/语言到动作的学习、动作表示、训练数据或评测。
-- 1：与 VLA 相关的感知、世界模型、可供性、导航等支撑工作，但没有直接研究 VLA 策略。
-- 0：与上述方向无实质关联。仅出现 vision、language、agent 等词不足以算相关。
-
-填完盲评表后可运行 `python scripts/review_rankings.py comparison.json blind-review.csv`。
-脚本要求完整标注三个组前 20 篇的并集，缺失标签不会被当作不相关。
-输出直接相关比例、包含支撑工作的相关比例及基于已复核并集理想排序的 nDCG。
-该 nDCG 的理想集合仅限已复核并集，不代表整个候选库的理想排序或召回率；
-助手按摘要给出的标签也应明确标为助手初评，不能冒充用户偏好标签。
-
-## 数据与报告
-
-原始库摘要与临时向量仅保存在该次 runner 的临时目录，不上传到报告或缓存。
-报告包含公开候选论文的标题、链接和排名，不包含 Zotero Key、库文献标题或摘要。
-报告位于 Actions Summary 与名为 `real-paper-selection-comparison` 的 Artifact，保留 14 天。
-如果订阅源当前为空，任务会明确报错并提示稍后重试，不会用合成数据替代选文验证。
-
-## 模型定位
-
-Jina nano retrieval 是约 239M 参数、多语言、768 维、8192-token 输入的检索模型；
-GIST-small 是约 33M 参数、主要面向英文、384 维、512-token 输入的小型模型。
-前者更值得检验多语言和长摘要的效果，后者更适合 CPU 预算严格的英文摘要场景。
-这些是适配判断，不是本任务质量优劣的实测结论。
-
-官方资料：[Jina 模型卡](https://huggingface.co/jinaai/jina-embeddings-v5-text-nano-retrieval)、
-[GIST 模型卡](https://huggingface.co/avsolatorio/GIST-small-Embedding-v0)、
-[GISTEmbed 论文](https://arxiv.org/abs/2402.16829)、
-[Jina v5 论文](https://arxiv.org/abs/2602.15547)。
+参考：[GIST 模型卡](https://huggingface.co/avsolatorio/GIST-small-Embedding-v0)、
+[Jina 模型卡](https://huggingface.co/jinaai/jina-embeddings-v5-text-nano-retrieval)。

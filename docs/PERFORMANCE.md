@@ -12,7 +12,8 @@
 - 本地摘要与机构分别请求，同一个模型实例重复使用。摘要用正文证据，机构提取用作者区域并
   使用独立 JSON 约束。`n_ctx=8192`，默认摘要输入预算为 4000 个模型 token，分别为摘要、方法、
   实验和结论节选保留空间。更多信息见 [每日产出与恢复机制](DAILY_RELIABILITY.md)。
-- 每日与手动任务的运行上限为 300 分钟；日志记录排序、正文/生成和总耗时。
+- 每日与手动任务没有另设总处理时限；日志记录排序、正文/生成和总耗时。
+  GitHub 托管运行器每个 job 仍受平台的 6 小时上限约束。
 
 GitHub Actions 会缓存模型与计算得到的向量。首次运行仍需下载模型、计算向量；后续
 运行的效果取决于缓存是否命中和新增文献数量。自定义 `cache_dir` 时也需要自行调整
@@ -60,13 +61,6 @@ llm:
 
 你的非空旧 Secret `MAX_PAPER_NUM` 仍优先于 YAML。本次优化没有擅自缩减已配置的篇数。
 GitHub 上的普通 `ubuntu-latest` 任务在 CPU 上运行，不会自动使用你的电脑或 GPU。
-
-## 如何看测量结果
-
-CI 的真实模型任务会执行 `scripts/check_performance.py`，在 runner CPU 上为 350 篇
-合成候选摘要和 456 篇合成库摘要计算嵌入，再读取缓存重算相似度。结果显示在 CI Summary
-和 `CPU embedding benchmark` Notice 中。首次计时包含模型加载；第二次会验证缓存结果
-与首次结果一致。这是同规模的合成数据基准，不能视为你的真实文献库完整耗时保证。
 
 参考：[GIST 模型说明](https://huggingface.co/avsolatorio/GIST-small-Embedding-v0)、
 [Sentence Transformers CPU 推理优化](https://sbert.net/docs/sentence_transformer/usage/efficiency.html)、

@@ -239,7 +239,7 @@ That's all! Now you can test the workflow by manually triggering it:
 
 Then check the log and the receiver email after it finishes.
 
-By default, the main workflow runs on 22:00 UTC everyday. You can change this time by editting the workflow config `.github/workflows/main.yml`.
+The daily workflow is scheduled at 21:00 UTC (05:00 Beijing time on the following UTC date), with a retry slot at 02:00 UTC (10:00 Beijing time). A scheduled retry skips a digest already accepted by SMTP; otherwise it waits until at least five hours after the previous scheduled processing attempt began. GitHub scheduling can be delayed. Change the schedule in `.github/workflows/main.yml`.
 
 ### Local Running
 Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:

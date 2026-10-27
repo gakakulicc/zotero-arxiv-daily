@@ -192,19 +192,10 @@ class Executor:
                 reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             logger.info(f"Generating TLDR and affiliations for {len(reranked_papers)} selected papers...")
             generation_started = perf_counter()
-            budget_notice = False
             for p in tqdm(reranked_papers):
                 cache_key = state.paper_key(p, self.config)
                 if state.restore_paper(cache_key, p):
                     logger.info(f"Restored completed summary for {p.url}")
-                    continue
-                budget = self.config.executor.get("generation_budget_minutes", 240) * 60
-                if perf_counter() - started >= budget:
-                    if p.generation_status != "generated":
-                        p.tldr, p.generation_status, p.evidence_scope = p.abstract, "abstract_fallback", "abstract_only"
-                    if not budget_notice:
-                        self.notices.append("The processing time budget was reached; remaining selected papers retain their original abstracts. 部分入选论文保留原始摘要，未冒充模型总结。")
-                        budget_notice = True
                     continue
                 if self.config.executor.get("fetch_full_text", True):
                     try:

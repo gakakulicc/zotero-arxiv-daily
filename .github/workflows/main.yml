@@ -7,11 +7,12 @@ on:
         type: boolean
         default: true
   schedule:
-    - cron: '0 22 * * *'
-    - cron: '17 0 * * *' # Retry slot: skip when today's scheduled digest already reached SMTP.
+    - cron: '0 21 * * *' # 05:00 Asia/Shanghai on the following UTC date.
+    - cron: '0 2 * * *' # 10:00 Asia/Shanghai; skip an already delivered digest.
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: daily-digest-${{ github.repository }}
@@ -20,7 +21,6 @@ concurrency:
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
@@ -35,6 +35,42 @@ jobs:
           revision=$(git rev-parse HEAD)
           printf 'Checked-out revision: %s\nRun attempt: %s\n' "$revision" "$GITHUB_RUN_ATTEMPT"
           printf '## Code version\n\n- Commit: `%s`\n- Run attempt: %s\n' "$revision" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Determine minimum retry interval
+        if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *'
+        id: retry-interval
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const repo = context.repo;
+            const {data: current} = await github.rest.actions.getWorkflowRun({...repo, run_id: context.runId});
+            const beijingDay = value => new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 10);
+            const day = beijingDay(current.created_at);
+            const {data} = await github.rest.actions.listWorkflowRuns({
+              ...repo, workflow_id: current.workflow_id, event: 'schedule',
+              created: `>=${new Date(Date.parse(`${day}T00:00:00+08:00`)).toISOString()}`, per_page: 100
+            });
+            const previous = data.workflow_runs
+              .filter(run => run.id !== current.id && run.created_at < current.created_at && beijingDay(run.created_at) === day)
+              .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+            let seconds = 0;
+            if (previous) {
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                ...repo, run_id: previous.id, per_page: 100
+              });
+              const step = jobs.flatMap(job => job.steps || []).find(step => step.name === 'Run script' && step.started_at);
+              const started = Date.parse(step?.started_at || previous.run_started_at);
+              if (!Number.isFinite(started)) throw new Error('Cannot determine the previous scheduled start time');
+              seconds = Math.max(0, Math.ceil((started + 5 * 3600000 - Date.now()) / 1000));
+              core.info(`Previous scheduled run: ${previous.id}; retry delay: ${seconds}s`);
+            }
+            core.setOutput('seconds', seconds);
+
+      - name: Respect five hours between scheduled attempts
+        if: steps.retry-interval.outputs.seconds != '' && steps.retry-interval.outputs.seconds != '0'
+        env:
+          RETRY_DELAY_SECONDS: ${{ steps.retry-interval.outputs.seconds }}
+        run: sleep "$RETRY_DELAY_SECONDS"
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v7

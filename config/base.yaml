@@ -70,5 +70,5 @@ executor:
   combine_llm_requests: false # Deprecated compatibility key; the executor always uses independent calls.
   state_dir: .cache/digests # Completed public-paper summaries and hashed delivery markers; no Zotero corpus or credentials.
   report_dir: .cache/delivery # Latest rendered email and machine-readable delivery status.
-  generation_budget_minutes: 240 # Leave room to send the digest before the 300-minute Actions limit.
+  generation_budget_minutes: null # Deprecated compatibility key; no total processing deadline is applied.
   conversion_delay: 0 # Metadata conversion performs no per-paper network access.

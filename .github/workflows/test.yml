@@ -12,7 +12,6 @@ concurrency:
 jobs:
   calculate-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF

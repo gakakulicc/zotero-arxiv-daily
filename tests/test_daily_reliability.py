@@ -141,16 +141,21 @@ def test_changed_summary_settings_invalidate_saved_output(config, tmp_path):
     state.close()
 
 
-def test_time_budget_still_delivers_all_twenty_selected_papers(config, monkeypatch):
+def test_legacy_time_budget_does_not_skip_selected_paper_generation(config, monkeypatch):
     config.llm.backend = "local"
     config.executor.generation_budget_minutes = 0
     papers = [make_sample_paper(title=f"Selected paper {index}", url=f"https://arxiv.org/abs/test-{index}") for index in range(20)]
     executor = make_executor(config, papers, None)
-    executor.retrievers['arxiv'].enrich_paper = lambda paper: pytest.fail("Deadline reached; do not start optional extraction")
+    generated = []
+    def generate(paper, *args):
+        generated.append(paper.url)
+        paper.tldr, paper.generation_status = "Supported summary", "generated"
+    monkeypatch.setattr(type(papers[0]), "generate_tldr", generate)
     sent = []
     monkeypatch.setattr("zotero_arxiv_daily.executor.send_email", lambda cfg, html: sent.append(html))
     executor.run()
     assert len(sent) == 1
     assert all(paper.title in sent[0] for paper in papers)
-    assert all(paper.generation_status == "abstract_fallback" for paper in papers)
-    assert "processing time budget was reached" in sent[0]
+    assert generated == [paper.url for paper in papers]
+    assert all(paper.generation_status == "generated" for paper in papers)
+    assert "processing time budget was reached" not in sent[0]
