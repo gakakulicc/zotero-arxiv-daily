@@ -200,8 +200,8 @@ class Executor:
                     continue
                 budget = self.config.executor.get("generation_budget_minutes", 240) * 60
                 if perf_counter() - started >= budget:
-                    p.tldr, p.affiliations = p.abstract, None
-                    p.generation_status, p.evidence_scope = "abstract_fallback", "abstract_only"
+                    if p.generation_status != "generated":
+                        p.tldr, p.generation_status, p.evidence_scope = p.abstract, "abstract_fallback", "abstract_only"
                     if not budget_notice:
                         self.notices.append("The processing time budget was reached; remaining selected papers retain their original abstracts. 部分入选论文保留原始摘要，未冒充模型总结。")
                         budget_notice = True
@@ -211,16 +211,19 @@ class Executor:
                         self.retrievers[p.source].enrich_paper(p)
                     except Exception as exc:
                         logger.warning(f"Full-text enrichment failed for {p.url}; using the abstract: {exc}")
-                try:
-                    if (self.config.llm.get("backend", "api") == "local"
-                            and self.config.executor.get("combine_llm_requests", True)):
-                        p.generate_insights(self.openai_client, self.config.llm)
-                    else:
+                if p.generation_status != "generated":
+                    try:
                         p.generate_tldr(self.openai_client, self.config.llm)
+                    except Exception as exc:
+                        logger.warning(f"Summary failed for {p.url}: {type(exc).__name__}; continuing")
+                        p.tldr, p.generation_status = p.abstract, "abstract_fallback"
+                    state.save_paper(cache_key, p)
+                if p.affiliations_status not in {"generated", "unavailable"}:
+                    try:
                         p.generate_affiliations(self.openai_client, self.config.llm)
-                except Exception as exc:
-                    logger.warning(f"Paper generation failed for {p.url}: {type(exc).__name__}; continuing")
-                    p.tldr, p.affiliations, p.generation_status = p.abstract, None, "abstract_fallback"
+                    except Exception as exc:
+                        logger.warning(f"Affiliations failed for {p.url}: {type(exc).__name__}; continuing")
+                        p.affiliations, p.affiliations_status = None, "failed"
                 state.save_paper(cache_key, p)
             logger.info(f"Paper enrichment and generation completed in {perf_counter() - generation_started:.1f}s")
         elif not self.config.executor.send_empty:

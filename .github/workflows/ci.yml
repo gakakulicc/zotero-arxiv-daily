@@ -24,9 +24,13 @@ jobs:
           uv run --locked pytest --cov=src/zotero_arxiv_daily --cov-report=term-missing
 
   local-model:
-    name: Verify real local Qwen inference
+    name: Verify real local ${{ matrix.profile }} inference
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [qwen25, qwen35]
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       CMAKE_ARGS: -DGGML_NATIVE=OFF
@@ -42,6 +46,7 @@ jobs:
           key: ${{ runner.os }}-hf-v1-${{ hashFiles('config/base.yaml') }}
           restore-keys: ${{ runner.os }}-hf-v1-
       - name: Generate a summary with the real GGUF model, without LLM API keys
-        run: uv run --locked --extra local-llm scripts/check_local_llm.py
+        run: uv run --locked --extra local-llm scripts/check_local_llm.py --profile ${{ matrix.profile }}
       - name: Measure real CPU embeddings and cache reuse
+        if: matrix.profile == 'qwen25'
         run: uv run --locked scripts/check_performance.py

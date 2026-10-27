@@ -29,6 +29,8 @@ llm:
     model_path: null # Optional existing GGUF file. Otherwise downloaded from Hugging Face.
     repo_id: Qwen/Qwen2.5-3B-Instruct-GGUF
     filename: qwen2.5-3b-instruct-q4_k_m.gguf
+    revision: null # Pin a Hugging Face commit for reproducible GGUF downloads.
+    enable_thinking: null # false explicitly disables thinking through the model's own chat template.
     n_ctx: 8192
     n_threads: 4
     max_tokens: 512
@@ -65,7 +67,7 @@ executor:
   source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv','chemrxiv']
   reranker: local # The reranker to use. Example: 'local' or 'api'
   fetch_full_text: true # Only enrich selected papers after ranking; false uses abstracts alone.
-  combine_llm_requests: true # One local model request for both TLDR and affiliations.
+  combine_llm_requests: false # Deprecated compatibility key; the executor always uses independent calls.
   state_dir: .cache/digests # Completed public-paper summaries and hashed delivery markers; no Zotero corpus or credentials.
   report_dir: .cache/delivery # Latest rendered email and machine-readable delivery status.
   generation_budget_minutes: 240 # Leave room to send the digest before the 300-minute Actions limit.

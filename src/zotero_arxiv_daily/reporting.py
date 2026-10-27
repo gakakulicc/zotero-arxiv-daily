@@ -12,7 +12,8 @@ def record_delivery(directory, html, status, papers, notices):
     data = {"updated_utc": datetime.now(timezone.utc).isoformat(), "status": status,
             "papers": len(papers), "generated": sum(p.generation_status == "generated" for p in papers),
             "abstract_fallbacks": sum(p.generation_status == "abstract_fallback" for p in papers),
-            "abstract_only": sum(p.evidence_scope == "abstract_only" for p in papers), "notices": notices}
+            "abstract_only": sum(p.evidence_scope == "abstract_only" for p in papers),
+            "affiliation_failures": sum(p.affiliations_status == "failed" for p in papers), "notices": notices}
     if directory:
         try:
             root = Path(directory)

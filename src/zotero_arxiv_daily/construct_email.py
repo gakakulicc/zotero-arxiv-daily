@@ -134,6 +134,8 @@ def render_email(papers:list[Paper], notices: list[str] | None = None) -> str:
         labels = []
         if p.generation_status == "abstract_fallback":
             labels.append("Summary unavailable; showing the original abstract / 摘要生成失败，以下为原始摘要")
+        if p.affiliations_status == "failed":
+            labels.append("Institution extraction failed / 机构提取失败，未猜测补全")
         if p.evidence_scope == "abstract_only":
             labels.append("Based on abstract only / 仅依据摘要")
         elif p.evidence_scope:

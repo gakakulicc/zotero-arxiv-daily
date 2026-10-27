@@ -13,6 +13,15 @@ HEADING = re.compile(
 )
 
 
+def author_evidence(full_text: str) -> str:
+    """Prefer explicit TeX author/affiliation blocks, otherwise the title-page text."""
+    markers = list(re.finditer(r'\\(?:author|affiliation|affil|institute|address)\b', full_text))
+    start = markers[0].start() if markers else 0
+    ending = re.search(r'\\(?:maketitle|begin\{abstract\})|^\s*(?:#{1,6}\s*)?Abstract\b',
+                       full_text[start:], flags=re.MULTILINE | re.IGNORECASE)
+    return full_text[start:start + ending.start()] if ending else full_text[start:]
+
+
 def _tail_excerpt(text, truncate, budget):
     text = text[-30000:]
     low, high = 0, len(text)

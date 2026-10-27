@@ -51,30 +51,35 @@ class DigestState:
         generation = config.llm.get("generation_kwargs") or {}
         if OmegaConf.is_config(generation):
             generation = OmegaConf.to_container(generation)
-        identity = {"version": 2, "url": paper.url, "title": paper.title, "abstract": paper.abstract,
+        identity = {"version": 3, "url": paper.url, "title": paper.title, "abstract": paper.abstract,
                     "language": config.llm.get("language"), "backend": config.llm.get("backend"),
-                    "combined": config.executor.get("combine_llm_requests", True),
                     "full_text": config.executor.get("fetch_full_text", True),
                     "generation_kwargs": generation,
-                    "local": {key: local.get(key) for key in ("repo_id", "filename", "model_path", "n_ctx", "max_tokens", "input_tokens", "temperature")}}
+                    "local": {key: local.get(key) for key in ("repo_id", "filename", "revision", "enable_thinking", "model_path", "n_ctx", "max_tokens", "input_tokens", "temperature")}}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         return "paper:" + digest
 
     def restore_paper(self, key, paper):
         data = self.get(key)
-        if (not isinstance(data, dict) or not isinstance(data.get("tldr"), str) or not data["tldr"].strip()
-                or data.get("generation_status") != "generated"):
+        if not isinstance(data, dict):
             return False
+        summary_done = (isinstance(data.get("tldr"), str) and bool(data["tldr"].strip())
+                        and data.get("generation_status") == "generated")
         affiliations = data.get("affiliations")
         if affiliations is not None and (not isinstance(affiliations, list) or any(not isinstance(x, str) for x in affiliations)):
             return False
-        for field in ("tldr", "affiliations", "generation_status", "evidence_scope"):
-            setattr(paper, field, data.get(field))
-        return True
+        if summary_done:
+            for field in ("tldr", "generation_status", "evidence_scope"):
+                setattr(paper, field, data.get(field))
+        affiliations_done = (data.get("affiliations_status") == "generated" and isinstance(affiliations, list)
+                             or data.get("affiliations_status") == "unavailable" and affiliations is None)
+        if affiliations_done:
+            paper.affiliations, paper.affiliations_status = affiliations, data["affiliations_status"]
+        return summary_done and affiliations_done
 
     def save_paper(self, key, paper):
-        if paper.generation_status == "generated":
-            self.put(key, {name: getattr(paper, name) for name in ("tldr", "affiliations", "generation_status", "evidence_scope")})
+        if paper.generation_status == "generated" or paper.affiliations_status == "generated":
+            self.put(key, {name: getattr(paper, name) for name in ("tldr", "affiliations", "generation_status", "evidence_scope", "affiliations_status")})
 
     def close(self):
         if self.connection:

@@ -49,6 +49,11 @@ def _base_config():
                 "executor.state_dir=null",
                 "executor.report_dir=null",
                 "llm.summary_attempts=1",
+                "llm.local.repo_id=Qwen/Qwen2.5-3B-Instruct-GGUF",
+                "llm.local.filename=qwen2.5-3b-instruct-q4_k_m.gguf",
+                "llm.local.revision=null",
+                "llm.local.enable_thinking=null",
+                "llm.local.max_tokens=512",
             ],
         )
     return cfg
@@ -68,11 +73,18 @@ def stub_local_llm(monkeypatch):
     import sys
     from types import SimpleNamespace
 
-    state = SimpleNamespace(loads=[], downloads=[], requests=[])
+    state = SimpleNamespace(loads=[], downloads=[], requests=[], templates=[])
+
+    class FakeFormatter:
+        def __init__(self, **kwargs):
+            state.templates.append(kwargs)
+        def to_chat_handler(self):
+            return "test-handler"
 
     class FakeLlama:
         def __init__(self, **kwargs):
             state.loads.append(kwargs)
+            self.metadata = {"tokenizer.chat_template": "{{ messages }}"}
 
         @classmethod
         def from_pretrained(cls, **kwargs):
@@ -82,8 +94,14 @@ def stub_local_llm(monkeypatch):
         def tokenize(self, text, **kwargs):
             return list(text)
 
-        def detokenize(self, tokens):
+        def detokenize(self, tokens, **kwargs):
             return bytes(tokens)
+
+        def token_eos(self):
+            return 2
+
+        def token_bos(self):
+            return 1
 
         def create_chat_completion(self, **kwargs):
             state.requests.append(kwargs)
@@ -95,4 +113,5 @@ def stub_local_llm(monkeypatch):
             return {"choices": [{"message": {"content": content}}]}
 
     monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    monkeypatch.setitem(sys.modules, "llama_cpp.llama_chat_format", SimpleNamespace(Jinja2ChatFormatter=FakeFormatter))
     return state

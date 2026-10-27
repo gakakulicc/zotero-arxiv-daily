@@ -9,8 +9,8 @@
 - 本地嵌入向量缓存到 `.cache/embeddings`。缓存键包含模型、编码选项、最大输入长度和
   文本的 SHA-256；摘要修改或更换模型时自动重新计算。文件保存哈希和向量，不保存摘要原文。
   不变的 Zotero 文献不用每天重算；缓存不可用时仍可正常计算。
-- 本地摘要与机构信息合并为一次请求，并使用 JSON 约束输出。仍保留原来的 Qwen 3B、
-  `n_ctx=8192`、`max_tokens=512`，默认输入预算为 4000 个模型 token，分别为摘要、方法、
+- 本地摘要与机构分别请求，同一个模型实例重复使用。摘要用正文证据，机构提取用作者区域并
+  使用独立 JSON 约束。`n_ctx=8192`，默认摘要输入预算为 4000 个模型 token，分别为摘要、方法、
   实验和结论节选保留空间。更多信息见 [每日产出与恢复机制](DAILY_RELIABILITY.md)。
 - 每日与手动任务的运行上限为 300 分钟；日志记录排序、正文/生成和总耗时。
 
@@ -32,7 +32,7 @@ reranker:
     encode_kwargs: {}
 executor:
   fetch_full_text: true
-  combine_llm_requests: true
+  combine_llm_requests: false
 llm:
   backend: local
   local:
@@ -43,7 +43,7 @@ llm:
 
 如果显式选择 Jina 等其他模型，请使用该模型需要的编码参数。GIST 不使用 Jina 的
 `task: retrieval` 和 `prompt_name: document`。可将 `cache_dir` 设为 null 禁用向量缓存。
-把 `combine_llm_requests` 设为 false 可恢复单独生成摘要和机构信息的方式。
+`combine_llm_requests` 是兼容旧配置的弃用字段；当前正式执行流程始终分别请求摘要与机构。
 
 ## 进一步加速的取舍
 

@@ -227,7 +227,7 @@ def test_run_end_to_end(config, monkeypatch, backend, stub_local_llm, paper_limi
     assert len(enriched) == (expected_count if fetch_full_text else 0)
     if backend == "local":
         assert len(stub_local_llm.loads) == 1
-        assert len(stub_local_llm.requests) == expected_count
+        assert len(stub_local_llm.requests) == expected_count * 2
 
 
 def test_run_no_papers_send_empty_false(config, monkeypatch):

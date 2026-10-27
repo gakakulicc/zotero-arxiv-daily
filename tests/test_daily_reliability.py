@@ -73,7 +73,7 @@ def test_smtp_failure_resumes_summaries_and_scheduled_retry_skips_after_acceptan
     config.executor.report_dir = str(tmp_path / 'report')
     calls = []
     client = SimpleNamespace(truncate_prompt=lambda text, limit: text[:limit],
-                             generate=lambda *a, **kw: calls.append(1) or '{"tldr":"Supported summary", "affiliations":[]}')
+                             generate=lambda *a, **kw: calls.append(1) or 'Supported summary')
     attempts = []
     def send(cfg, html):
         attempts.append(html)
@@ -107,7 +107,7 @@ def test_one_bad_paper_does_not_cancel_the_other_papers(config, monkeypatch):
         if self.title == "broken":
             raise RuntimeError("Unexpected per-paper problem")
         self.tldr, self.generation_status = "Completed", "generated"
-    monkeypatch.setattr(type(papers[0]), "generate_insights", generate)
+    monkeypatch.setattr(type(papers[0]), "generate_tldr", generate)
     sent = []
     monkeypatch.setattr("zotero_arxiv_daily.executor.send_email", lambda cfg, html: sent.append(html))
     make_executor(config, papers, None).run()
