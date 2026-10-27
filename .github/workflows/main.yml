@@ -22,6 +22,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Show code version
+        run: |
+          revision=$(git rev-parse HEAD)
+          printf 'Checked-out revision: %s\nRun attempt: %s\n' "$revision" "$GITHUB_RUN_ATTEMPT"
+          printf '## Code version\n\n- Commit: `%s`\n- Run attempt: %s\n' "$revision" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
 
