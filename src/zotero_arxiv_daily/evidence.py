@@ -13,13 +13,27 @@ HEADING = re.compile(
 )
 
 
+def _tail_excerpt(text, truncate, budget):
+    text = text[-30000:]
+    low, high = 0, len(text)
+    while low < high:
+        size = (low + high + 1) // 2
+        suffix = text[-size:]
+        if truncate(suffix, budget) == suffix:
+            low = size
+        else:
+            high = size - 1
+    return text[-low:] if low else ""
+
+
 def paper_evidence(title: str, abstract: str, full_text: str | None,
                    truncate: Callable[[str, int], str], budget: int) -> tuple[str, str]:
     if budget < 256:
         raise ValueError("Summary input_tokens must be at least 256")
-    header = truncate(f"Title: {title}\nAbstract: {abstract}", max(128, budget // 3))
+    metadata = f"Title: {title}\nAbstract: {abstract}"
     if not full_text:
-        return header, "abstract_only"
+        return truncate(metadata, budget), "abstract_only"
+    header = truncate(metadata, max(128, budget // 3))
 
     # References are not evidence of the current paper's experimental claims.
     body = re.split(r"\\(?:bibliography|begin\{thebibliography\})|^#{1,6}\s+References\b|^References\s*$",
@@ -44,6 +58,7 @@ def paper_evidence(title: str, abstract: str, full_text: str | None,
     allowance = max(32, int(budget * .5) // len(excerpts))
     for name, values in excerpts:
         # Give every matching section a share, so a long Discussion cannot crowd out Limitations.
-        snippets = [truncate(value, max(16, allowance // len(values))) for value in values]
+        snippets = ([_tail_excerpt(body, truncate, allowance)] if name == "Unstructured body ending" else
+                    [truncate(value, max(16, allowance // len(values))) for value in values])
         parts.append(name + ":\n" + truncate("\n".join(snippets), allowance))
     return truncate("\n\n".join(parts), budget), "section_excerpts" if matched_sections else "body_excerpts"

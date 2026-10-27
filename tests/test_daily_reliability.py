@@ -24,6 +24,17 @@ def test_long_introduction_does_not_hide_results_or_limitations(heading):
     assert len(prompt) <= 4000
 
 
+def test_unstructured_body_includes_its_actual_end_and_abstract_only_uses_full_budget():
+    prompt, scope = paper_evidence("Title", "Abstract", 'background ' * 10000 + 'FINAL_FINDING',
+                                  lambda value, limit: value[:limit], 4000)
+    assert 'FINAL_FINDING' in prompt
+    assert scope == 'body_excerpts'
+    prompt, scope = paper_evidence("Title", 'a' * 2500 + 'ABSTRACT_END', None,
+                                  lambda value, limit: value[:limit], 4000)
+    assert 'ABSTRACT_END' in prompt
+    assert scope == 'abstract_only'
+
+
 def test_bad_json_is_retried_and_is_not_saved_as_a_completed_summary(config, monkeypatch, tmp_path):
     config.llm.backend = "local"
     config.llm.summary_attempts = 2
@@ -128,3 +139,18 @@ def test_changed_summary_settings_invalidate_saved_output(config, tmp_path):
     config.llm.local.input_tokens += 1
     assert not state.restore_paper(state.paper_key(paper, config), paper)
     state.close()
+
+
+def test_time_budget_still_delivers_all_twenty_selected_papers(config, monkeypatch):
+    config.llm.backend = "local"
+    config.executor.generation_budget_minutes = 0
+    papers = [make_sample_paper(title=f"Selected paper {index}", url=f"https://arxiv.org/abs/test-{index}") for index in range(20)]
+    executor = make_executor(config, papers, None)
+    executor.retrievers['arxiv'].enrich_paper = lambda paper: pytest.fail("Deadline reached; do not start optional extraction")
+    sent = []
+    monkeypatch.setattr("zotero_arxiv_daily.executor.send_email", lambda cfg, html: sent.append(html))
+    executor.run()
+    assert len(sent) == 1
+    assert all(paper.title in sent[0] for paper in papers)
+    assert all(paper.generation_status == "abstract_fallback" for paper in papers)
+    assert "processing time budget was reached" in sent[0]
